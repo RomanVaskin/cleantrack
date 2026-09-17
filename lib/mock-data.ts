@@ -1,15 +1,11 @@
-export type ChecklistItem = {
+export type Service = {
   id: string
   label: string
+  /** Входит ли услуга в эту уборку (выбрана клиентом/менеджером) */
+  included: boolean
   done: boolean
-  photoRequired?: boolean
   photo?: string | null
-}
-
-export type Zone = {
-  id: string
-  title: string
-  items: ChecklistItem[]
+  note?: string
 }
 
 export const cleaning = {
@@ -25,44 +21,47 @@ export const photos = [
   { src: '/photos/room.png', alt: 'Комната после уборки' },
 ]
 
-export const initialZones: Zone[] = [
-  {
-    id: 'kitchen',
-    title: 'Кухня',
-    items: [
-      { id: 'k1', label: 'Протереть рабочие поверхности', done: true },
-      { id: 'k2', label: 'Помыть раковину', done: true },
-      { id: 'k3', label: 'Протереть фасады', done: true },
-      { id: 'k4', label: 'Очистить плиту', done: false, photoRequired: true, photo: null },
-      { id: 'k5', label: 'Помыть пол', done: false },
-    ],
-  },
-  {
-    id: 'bath',
-    title: 'Санузел',
-    items: [
-      { id: 'b1', label: 'Раковина', done: true },
-      { id: 'b2', label: 'Зеркало', done: true },
-      { id: 'b3', label: 'Унитаз', done: false },
-      { id: 'b4', label: 'Душевая', done: false, photoRequired: true, photo: null },
-      { id: 'b5', label: 'Пол', done: false },
-    ],
-  },
-  {
-    id: 'room',
-    title: 'Комната',
-    items: [
-      { id: 'r1', label: 'Удалить пыль', done: true },
-      { id: 'r2', label: 'Пропылесосить', done: false },
-      { id: 'r3', label: 'Помыть пол', done: false },
-    ],
-  },
+export const initialServices: Service[] = [
+  { id: 's1', label: 'Влажная уборка квартиры', included: true, done: true },
+  { id: 's2', label: 'Стирка вещей', included: true, done: true },
+  { id: 's3', label: 'Глажка вещей', included: true, done: true },
+  { id: 's4', label: 'Сложить вещи в шкафах / гардеробной', included: true, done: false, note: 'Сложить по полкам, как было' },
+  { id: 's5', label: 'Уборка полок внутри шкафов', included: true, done: false },
+  { id: 's6', label: 'Разложить / организовать вещи в шкафах', included: false, done: false },
+  { id: 's7', label: 'Мойка окон', included: true, done: false, photo: null },
+  { id: 's8', label: 'Удаление сложных пятен: диваны / кресла', included: true, done: false },
+  { id: 's9', label: 'Удаление сложных пятен: ковры', included: false, done: false },
+  { id: 's10', label: 'Удаление сложных пятен: пол', included: true, done: false },
+  { id: 's11', label: 'Удаление сложных пятен: мебель / фасады шкафов', included: false, done: false },
+  { id: 's12', label: 'Отнести / забрать вещи из химчистки', included: false, done: false },
 ]
 
-export function countProgress(zones: Zone[]) {
-  const items = zones.flatMap((z) => z.items)
-  const total = items.length
-  const done = items.filter((i) => i.done).length
+export type CabinetRule = 'all' | 'selected' | 'none'
+export type MoveRule = 'return' | 'agree' | 'none'
+
+export const cabinetOptions: Record<CabinetRule, string> = {
+  all: 'Да, все',
+  selected: 'Только указанные клиентом',
+  none: 'Нет',
+}
+
+export const moveOptions: Record<MoveRule, string> = {
+  return: 'Да, с возвращением на место',
+  agree: 'Только после согласования',
+  none: 'Нет',
+}
+
+export const clientRules = {
+  cabinets: 'selected' as CabinetRule,
+  moveItems: 'agree' as MoveRule,
+  doNotTouch: 'Документы на рабочем столе, ноутбук, картины',
+  wishes: 'В детской использовать только средство клиента',
+}
+
+export function countProgress(services: Service[]) {
+  const active = services.filter((s) => s.included)
+  const total = active.length
+  const done = active.filter((s) => s.done).length
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
   return { total, done, percent }
 }

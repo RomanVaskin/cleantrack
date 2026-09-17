@@ -6,65 +6,59 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   Clock,
+  Lock,
   MapPin,
+  Pencil,
   User,
 } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
-import { cleaning, countProgress, initialZones, photos, type Zone } from '@/lib/mock-data'
+import {
+  cabinetOptions,
+  cleaning,
+  clientRules,
+  countProgress,
+  initialServices,
+  moveOptions,
+  photos,
+  type Service,
+} from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 
 export default function CleanerPage() {
-  const [zones, setZones] = useState<Zone[]>(initialZones)
+  const [services, setServices] = useState<Service[]>(initialServices)
   const [finished, setFinished] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [noteOpen, setNoteOpen] = useState<string | null>(null)
 
-  const { total, done, percent } = useMemo(() => countProgress(zones), [zones])
+  const { total, done, percent } = useMemo(() => countProgress(services), [services])
+  const active = useMemo(() => services.filter((s) => s.included), [services])
+  const includedCount = active.length
 
-  const requiredItems = useMemo(
-    () => zones.flatMap((z) => z.items).filter((i) => i.photoRequired),
-    [zones],
-  )
-  const canFinish = requiredItems.every((i) => i.done && i.photo)
-
-  function toggleItem(zoneId: string, itemId: string) {
-    setZones((prev) =>
-      prev.map((z) =>
-        z.id !== zoneId
-          ? z
-          : {
-              ...z,
-              items: z.items.map((i) => (i.id === itemId ? { ...i, done: !i.done } : i)),
-            },
+  function toggleIncluded(id: string) {
+    setServices((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, included: !s.included, done: false, photo: null } : s,
       ),
     )
   }
 
-  function attachPhoto(zoneId: string, itemId: string, index: number) {
+  function toggleDone(id: string) {
+    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, done: !s.done } : s)))
+  }
+
+  function attachPhoto(id: string, index: number) {
     const src = photos[index % photos.length].src
-    setZones((prev) =>
-      prev.map((z) =>
-        z.id !== zoneId
-          ? z
-          : {
-              ...z,
-              items: z.items.map((i) => (i.id === itemId ? { ...i, photo: src } : i)),
-            },
-      ),
-    )
+    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, photo: src } : s)))
   }
 
-  function addNextPhoto() {
-    for (const z of zones) {
-      const item = z.items.find((i) => i.photoRequired && !i.photo)
-      if (item) {
-        attachPhoto(z.id, item.id, requiredItems.filter((r) => r.photo).length)
-        return
-      }
-    }
+  function updateNote(id: string, value: string) {
+    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, note: value } : s)))
   }
 
   if (finished) {
@@ -75,7 +69,7 @@ export default function CleanerPage() {
         </span>
         <h1 className="mt-6 text-3xl font-semibold tracking-tight">Уборка завершена</h1>
         <p className="mt-2 text-lg text-muted-foreground">
-          {total} из {total} пунктов выполнено
+          {done} из {total} услуг выполнено
         </p>
         <p className="mt-1 text-sm text-muted-foreground">Уборка №{cleaning.number}</p>
         <Link href="/" className="mt-10 w-full">
@@ -118,6 +112,87 @@ export default function CleanerPage() {
           </dl>
         </section>
 
+        {/* Client rules */}
+        <section className="mt-4 rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2">
+            <Lock className="size-4 text-primary" />
+            <h2 className="text-base font-semibold tracking-tight">Правила клиента</h2>
+          </div>
+
+          <div className="mt-4 space-y-4 text-sm">
+            <RuleRow
+              question="Открывать шкафы, гардеробные и тумбочки?"
+              answer={cabinetOptions[clientRules.cabinets]}
+            />
+            <RuleRow
+              question="Перемещать личные вещи?"
+              answer={moveOptions[clientRules.moveItems]}
+            />
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
+                Категорически не трогать
+              </p>
+              <p className="mt-1 text-sm text-foreground">{clientRules.doNotTouch}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-secondary/60 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Особые пожелания
+              </p>
+              <p className="mt-1 text-sm text-foreground">{clientRules.wishes}</p>
+            </div>
+          </div>
+        </section>
+
+        {/* What's included — selection */}
+        <section className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-5 py-4 text-left"
+            aria-expanded={pickerOpen}
+          >
+            <span>
+              <span className="block text-base font-semibold tracking-tight">Что входит в уборку</span>
+              <span className="mt-0.5 block text-sm text-muted-foreground">
+                Выбрано услуг: {includedCount}
+              </span>
+            </span>
+            <ChevronDown
+              className={cn('size-5 text-muted-foreground transition-transform', pickerOpen && 'rotate-180')}
+            />
+          </button>
+
+          {pickerOpen && (
+            <ul className="border-t border-border">
+              {services.map((s) => (
+                <li key={s.id} className="border-b border-border last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleIncluded(s.id)}
+                    aria-pressed={s.included}
+                    className="flex min-h-[56px] w-full items-center gap-3 px-5 py-2 text-left"
+                  >
+                    <span
+                      className={cn(
+                        'flex size-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                        s.included ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background',
+                      )}
+                    >
+                      {s.included && <Check className="size-4" />}
+                    </span>
+                    <span className={cn('text-[15px] leading-snug', !s.included && 'text-muted-foreground')}>
+                      {s.label}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         {/* Progress */}
         <section className="mt-4 rounded-2xl border border-border bg-card p-5">
           <div className="flex items-end justify-between">
@@ -132,19 +207,23 @@ export default function CleanerPage() {
           <ProgressBar percent={percent} className="mt-4" />
         </section>
 
-        {/* Checklist */}
-        {zones.map((zone) => (
-          <section key={zone.id} className="mt-6">
-            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {zone.title}
-            </h2>
+        {/* Active checklist */}
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Чек-лист уборки
+          </h2>
+          {includedCount === 0 ? (
+            <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+              Выберите услуги в блоке «Что входит в уборку»
+            </p>
+          ) : (
             <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
-              {zone.items.map((item, idx) => (
+              {active.map((item, idx) => (
                 <li key={item.id} className={cn(idx > 0 && 'border-t border-border')}>
                   <div className="flex min-h-[60px] items-center gap-3 px-4 py-2">
                     <button
                       type="button"
-                      onClick={() => toggleItem(zone.id, item.id)}
+                      onClick={() => toggleDone(item.id)}
                       aria-pressed={item.done}
                       className="flex flex-1 items-center gap-3 text-left"
                     >
@@ -158,74 +237,92 @@ export default function CleanerPage() {
                       >
                         {item.done && <Check className="size-5" />}
                       </span>
-                      <span
-                        className={cn(
-                          'text-[15px] leading-snug',
-                          item.done && 'text-muted-foreground line-through',
-                        )}
-                      >
-                        {item.label}
-                        {item.photoRequired && !item.photo && (
+                      <span className="min-w-0">
+                        <span
+                          className={cn(
+                            'block text-[15px] leading-snug',
+                            item.done && 'text-muted-foreground line-through',
+                          )}
+                        >
+                          {item.label}
+                        </span>
+                        {item.done && (
                           <span className="mt-0.5 block text-xs font-medium text-primary no-underline">
-                            Фото обязательно
+                            Выполнено
                           </span>
                         )}
                       </span>
                     </button>
 
-                    {item.photoRequired &&
-                      (item.photo ? (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNoteOpen((v) => (v === item.id ? null : item.id))}
+                        className={cn(
+                          'flex size-11 items-center justify-center rounded-lg border border-border',
+                          item.note ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                        aria-label="Примечание"
+                      >
+                        <Pencil className="size-4" />
+                      </button>
+                      {item.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.photo || '/placeholder.svg'}
-                          alt="Фото пункта"
-                          className="size-11 shrink-0 rounded-lg object-cover"
+                          alt="Фото услуги"
+                          className="size-11 rounded-lg object-cover"
                         />
                       ) : (
                         <button
                           type="button"
-                          onClick={() => attachPhoto(zone.id, item.id, idx)}
-                          className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground"
+                          onClick={() => attachPhoto(item.id, idx)}
+                          className="flex size-11 items-center justify-center rounded-lg border border-border text-muted-foreground"
                           aria-label="Добавить фото"
                         >
                           <Camera className="size-5" />
                         </button>
-                      ))}
+                      )}
+                    </div>
                   </div>
+
+                  {(noteOpen === item.id || item.note) && (
+                    <div className="px-4 pb-3">
+                      {noteOpen === item.id ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={item.note ?? ''}
+                          onChange={(e) => updateNote(item.id, e.target.value)}
+                          onBlur={() => setNoteOpen(null)}
+                          placeholder="Добавить примечание…"
+                          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      ) : (
+                        <p className="rounded-xl bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
+                          {item.note}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
-          </section>
-        ))}
+          )}
+        </section>
       </main>
 
       {/* Sticky actions */}
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md">
         <div className="border-t border-border bg-background/95 px-5 pb-2 pt-3 backdrop-blur">
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={addNextPhoto}
-              className="h-14 flex-1 rounded-2xl text-base"
-            >
-              <Camera className="size-5" />
-              Добавить фото
-            </Button>
-            <Button
-              size="lg"
-              disabled={!canFinish}
-              onClick={() => setFinished(true)}
-              className="h-14 flex-[1.4] rounded-2xl text-base"
-            >
-              Завершить уборку
-            </Button>
-          </div>
-          {!canFinish && (
-            <p className="pt-2 text-center text-xs text-muted-foreground">
-              Отметьте обязательные пункты и добавьте фото
-            </p>
-          )}
+          <Button
+            size="lg"
+            disabled={includedCount === 0}
+            onClick={() => setFinished(true)}
+            className="h-14 w-full rounded-2xl text-base"
+          >
+            Завершить уборку
+          </Button>
         </div>
         <BottomNav active="today" />
       </div>
@@ -247,6 +344,18 @@ function InfoRow({
       <span className="text-muted-foreground">{icon}</span>
       <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
       <dd className="font-medium text-foreground">{value}</dd>
+    </div>
+  )
+}
+
+function RuleRow({ question, answer }: { question: string; answer: string }) {
+  return (
+    <div>
+      <p className="text-muted-foreground">{question}</p>
+      <p className="mt-1 flex items-center gap-2 font-medium text-foreground">
+        <Check className="size-4 text-primary" />
+        {answer}
+      </p>
     </div>
   )
 }
