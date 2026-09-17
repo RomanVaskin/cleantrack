@@ -2,6 +2,7 @@
 // CLEANTRACK_TEST_DATABASE_URL=postgresql://localhost:55439/postgres node tests/postgres.cjs
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const Module = require('node:module')
 const ts = require('typescript')
@@ -12,6 +13,8 @@ if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)
 }
 process.env.DATABASE_URL = url
 process.env.DEMO_CLEANING_ID = '11111111-1111-1111-1111-111111111111'
+const uploadDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'cleantrack-delete-test-'))
+process.env.CLEANTRACK_UPLOAD_DIR = uploadDirectory
 
 // Load the actual data layer without a Next request; only framework boundaries are stubbed.
 const originalLoad = Module._load
@@ -41,6 +44,7 @@ const {
   getOrCreateClientLink,
   updateCleaningClient,
   createCleaning,
+  deleteCleaning,
 } = require('../lib/data/cleaning-actions.ts')
 const mock = require('../lib/mock-data.ts')
 
@@ -289,6 +293,37 @@ async function main() {
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.equal((await pool.query('SELECT count(*)::int n FROM cleaning_services WHERE NOT is_selected AND NOT is_done')).rows[0].n, 4)
 
+    const deletion = await createCleaning({
+      clientName: 'Удаляемый клиент',
+      address: 'Адрес удаления',
+      selectedServiceIds: serviceIds,
+      cabinets: 'none',
+      moveItems: 'none',
+    })
+    assert.equal(deletion.ok, true)
+    const deletionId = deletion.cleaningId
+    const deletionToken = 'delete-cleaning-token'
+    await pool.query('UPDATE cleanings SET status = $2, client_token = $3 WHERE id = $1', [deletionId, 'accepted', deletionToken])
+    const deletedPhoto = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg'
+    const retainedPhoto = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg'
+    fs.writeFileSync(path.join(uploadDirectory, deletedPhoto), 'delete me')
+    fs.writeFileSync(path.join(uploadDirectory, retainedPhoto), 'keep me')
+    await pool.query('INSERT INTO photos (cleaning_id, storage_path) VALUES ($1, $2)', [deletionId, deletedPhoto])
+    await pool.query('INSERT INTO photos (cleaning_id, storage_path) VALUES ($1, $2)', [id, retainedPhoto])
+    await pool.query('INSERT INTO photos (cleaning_id, storage_path) VALUES ($1, $2)', [deletionId, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc.jpg'])
+    assert.deepEqual(await deleteCleaning('invalid uuid'), { ok: false, error: 'validation' })
+    assert.deepEqual(await deleteCleaning('99999999-9999-9999-9999-999999999999'), { ok: false, error: 'not_found' })
+    assert.deepEqual(await deleteCleaning(deletionId), { ok: true })
+    assert.equal((await pool.query('SELECT count(*)::int n FROM cleanings WHERE id = $1', [deletionId])).rows[0].n, 0)
+    assert.equal((await pool.query('SELECT count(*)::int n FROM cleaning_services WHERE cleaning_id = $1', [deletionId])).rows[0].n, 0)
+    assert.equal((await pool.query('SELECT count(*)::int n FROM client_rules WHERE cleaning_id = $1', [deletionId])).rows[0].n, 0)
+    assert.equal((await pool.query('SELECT count(*)::int n FROM photos WHERE cleaning_id = $1', [deletionId])).rows[0].n, 0)
+    assert.equal(fs.existsSync(path.join(uploadDirectory, deletedPhoto)), false)
+    assert.equal(fs.existsSync(path.join(uploadDirectory, retainedPhoto)), true)
+    assert.equal(await getCleaningDataByClientToken(deletionToken), null)
+    assert.equal((await getCleanerCleanings()).some(cleaning => cleaning.id === deletionId), false)
+    assert.deepEqual(await deleteCleaning(deletionId), { ok: false, error: 'not_found' })
+
     process.env.DATABASE_URL = ''
     assert.equal(getPostgresPool(), null)
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
@@ -332,6 +367,7 @@ async function main() {
     console.log('PASS: seed, client details, share tokens, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
   } finally {
     if (!pool.ended) await pool.end()
+    fs.rmSync(uploadDirectory, { recursive: true, force: true })
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

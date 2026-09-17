@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Camera,
   Check,
@@ -15,6 +16,7 @@ import {
   MapPin,
   Pencil,
   Phone,
+  Trash2,
   User,
 } from 'lucide-react'
 import { uploadCleaningPhoto } from '@/lib/photo-upload'
@@ -25,6 +27,7 @@ import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import {
   completeCleaning,
+  deleteCleaning,
   getOrCreateClientLink,
   updateCleaningClient,
   updateChecklistItem,
@@ -205,6 +208,7 @@ export function CleanerView({
           canCreate={hasClientDetails}
           className="mt-6 w-full"
         />
+        <DeleteCleaningAction cleaningId={cleaning.id} cleaningNumber={cleaning.number} />
         <Link href="/cleaner/jobs" className="mt-10 w-full">
           <Button size="lg" className="h-14 w-full rounded-2xl text-base">
             К списку уборок
@@ -530,6 +534,7 @@ export function CleanerView({
             if (file) void attachPhoto(file)
           }} />
         </section>
+        <DeleteCleaningAction cleaningId={cleaning.id} cleaningNumber={cleaning.number} />
       </main>
 
       {viewer && <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />}
@@ -554,6 +559,47 @@ export function CleanerView({
         <BottomNav active="today" />
       </div>
     </div>
+  )
+}
+
+function DeleteCleaningAction({ cleaningId, cleaningNumber }: { cleaningId: string; cleaningNumber: string }) {
+  const router = useRouter()
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState(false)
+
+  async function confirmDelete() {
+    setDeleting(true)
+    setError(false)
+    const result = await deleteCleaning(cleaningId)
+    if (!result.ok) {
+      setDeleting(false)
+      setError(true)
+      return
+    }
+    router.replace('/cleaner/jobs')
+  }
+
+  return (
+    <section className="mt-6 border-t border-border pt-6">
+      <Button type="button" variant="destructive" onClick={() => setConfirming(true)} className="w-full rounded-xl">
+        <Trash2 className="size-4" />
+        Удалить уборку
+      </Button>
+      {error && <p role="alert" className="mt-2 text-center text-sm text-destructive">Не удалось удалить уборку</p>}
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-end bg-foreground/30 p-4 sm:items-center" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-cleaning-title" className="w-full rounded-2xl border border-border bg-background p-5 shadow-xl">
+            <h2 id="delete-cleaning-title" className="text-lg font-semibold tracking-tight">Удалить уборку №{cleaningNumber}?</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Будут удалены чек-лист, фотографии и ссылка клиента. Это действие нельзя отменить.</p>
+            <div className="mt-5 flex gap-3">
+              <Button type="button" variant="outline" disabled={deleting} onClick={() => setConfirming(false)} className="flex-1 rounded-xl">Отмена</Button>
+              <Button type="button" variant="destructive" disabled={deleting} onClick={confirmDelete} className="flex-1 rounded-xl">{deleting ? 'Удаляем…' : 'Удалить'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

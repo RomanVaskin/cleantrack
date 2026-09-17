@@ -3,11 +3,16 @@
 import { randomBytes } from 'node:crypto'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
 import { DEMO_CLEANING_ID } from '@/lib/data/cleanings'
+import { removeStoredPhoto } from '@/lib/server/photo-storage'
 
 let mockClientToken: string | null = null
 
 export interface WriteResult {
   ok: boolean
+}
+
+export interface DeleteCleaningResult extends WriteResult {
+  error?: 'validation' | 'not_found' | 'server'
 }
 
 export interface CompleteCleaningResult extends WriteResult {
@@ -160,6 +165,42 @@ export async function updateCleaningClient(
     return { ok: result.rowCount === 1 }
   } catch {
     return { ok: false }
+  }
+}
+
+/** Deletes the cleaning and its cascaded records before removing its stored photo files. */
+export async function deleteCleaning(cleaningId: string): Promise<DeleteCleaningResult> {
+  if (typeof cleaningId !== 'string' || !UUID_PATTERN.test(cleaningId)) {
+    return { ok: false, error: 'validation' }
+  }
+
+  try {
+    const pool = getPostgresPool()
+    if (!pool) return { ok: false, error: 'server' }
+
+    const storagePaths = await withTransaction(pool, async (client) => {
+      // Locking the parent serializes this delete with other parent-scoped writes.
+      const cleaning = await client.query(
+        'SELECT id FROM cleanings WHERE id = $1 FOR UPDATE',
+        [cleaningId],
+      )
+      if (cleaning.rowCount !== 1) return null
+
+      const photos = await client.query<{ storage_path: string }>(
+        'SELECT storage_path FROM photos WHERE cleaning_id = $1',
+        [cleaningId],
+      )
+      await client.query('DELETE FROM cleanings WHERE id = $1', [cleaningId])
+      return photos.rows.map((photo) => photo.storage_path)
+    })
+
+    if (!storagePaths) return { ok: false, error: 'not_found' }
+
+    // A missing or invalid legacy file must not undo a committed database deletion.
+    await Promise.all(storagePaths.map((storagePath) => removeStoredPhoto(storagePath).catch(() => {})))
+    return { ok: true }
+  } catch {
+    return { ok: false, error: 'server' }
   }
 }
 
