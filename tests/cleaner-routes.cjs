@@ -53,6 +53,13 @@ async function main() {
     const listSource = fs.readFileSync(path.join(__dirname, '../app/cleaner/jobs/page.tsx'), 'utf8')
     assert.match(listSource, /ProgressBar/)
     assert.match(listSource, /Открыть/)
+    assert.match(listSource, /href="\/cleaner\/jobs\/new"/)
+    assert.match(listSource, /Новая уборка/)
+    const newPageSource = fs.readFileSync(path.join(__dirname, '../app/cleaner/jobs/new/page.tsx'), 'utf8')
+    assert.match(newPageSource, /NewCleaningForm/)
+    const newFormSource = fs.readFileSync(path.join(__dirname, '../app/cleaner/jobs/new/new-cleaning-form.tsx'), 'utf8')
+    assert.match(newFormSource, /Создать уборку/)
+    assert.match(newFormSource, /Создаём…/)
   } finally {
     cleanings.getCleaningData = originalGet
   }

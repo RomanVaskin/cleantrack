@@ -7,6 +7,7 @@ import {
   clientRules as mockClientRules,
   getInitialChecklist as getMockChecklist,
   photos as mockPhotos,
+  services as mockServices,
 } from '@/lib/mock-data'
 import type {
   CabinetRule,
@@ -38,6 +39,11 @@ export interface CleanerCleaning {
   completedAt: string | null
   acceptedAt: string | null
   progress: { done: number; total: number; percent: number }
+}
+
+export interface CatalogService {
+  id: string
+  label: string
 }
 
 interface CleaningRow {
@@ -119,6 +125,22 @@ function getMockCleanerCleanings(): CleanerCleaning[] {
     acceptedAt: mockCleaning.acceptedAt,
     progress: toProgress(checklist.filter((item) => item.done).length, checklist.length),
   }]
+}
+
+export async function getServices(): Promise<CatalogService[]> {
+  await connection()
+
+  try {
+    const pool = getPostgresPool()
+    if (!pool) return mockServices
+
+    const result = await pool.query<{ id: string; title: string }>(
+      'SELECT id, title FROM services ORDER BY sort_order, id',
+    )
+    return result.rows.map((row) => ({ id: row.id, label: row.title }))
+  } catch {
+    return mockServices
+  }
 }
 
 export async function getCleanerCleanings(): Promise<CleanerCleaning[]> {

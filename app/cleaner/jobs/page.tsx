@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, MapPin } from 'lucide-react'
+import { ArrowRight, CalendarDays, MapPin, Plus } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { getCleanerCleanings } from '@/lib/data/cleanings'
@@ -15,6 +15,14 @@ export default async function CleanerJobsPage() {
         <Logo />
         <h1 className="text-xl font-semibold tracking-tight">Мои уборки</h1>
       </header>
+
+      <Link
+        href="/cleaner/jobs/new"
+        className="mt-6 flex h-14 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-base font-semibold text-primary-foreground transition-opacity active:opacity-80"
+      >
+        <Plus className="size-5" />
+        Новая уборка
+      </Link>
 
       <section className="mt-8 space-y-3">
         {cleanings.length === 0 ? (

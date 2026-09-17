@@ -40,6 +40,7 @@ const {
   acceptCleaning,
   getOrCreateClientLink,
   updateCleaningClient,
+  createCleaning,
 } = require('../lib/data/cleaning-actions.ts')
 const mock = require('../lib/mock-data.ts')
 
@@ -79,6 +80,83 @@ async function main() {
     const visibleItem = ({ label, included, done, note, photo }) => ({ label, included, done, note, photo })
     assert.deepEqual(data.checklist.map(visibleItem), mock.getInitialChecklist().map(visibleItem))
     assert.deepEqual(data.photos.map(p => p.src).sort(), mock.photos.map(p => p.src).sort())
+
+    assert.deepEqual(await createCleaning({
+      clientName: ' ',
+      address: 'Адрес',
+      selectedServiceIds: [],
+      cabinets: 'none',
+      moveItems: 'none',
+    }), { ok: false, error: 'validation', field: 'clientName' })
+    assert.deepEqual(await createCleaning({
+      clientName: 'Новый клиент',
+      address: ' ',
+      selectedServiceIds: [],
+      cabinets: 'none',
+      moveItems: 'none',
+    }), { ok: false, error: 'validation', field: 'address' })
+    assert.deepEqual(await createCleaning({
+      clientName: 'Новый клиент',
+      address: 'Новый адрес',
+      selectedServiceIds: [],
+      cabinets: 'none',
+      moveItems: 'none',
+    }), { ok: false, error: 'validation', field: 'services' })
+    assert.deepEqual(await createCleaning({
+      clientName: 'Новый клиент',
+      address: 'Новый адрес',
+      selectedServiceIds: ['99999999-9999-4999-8999-999999999999'],
+      cabinets: 'none',
+      moveItems: 'none',
+    }), { ok: false, error: 'validation', field: 'serviceId' })
+
+    const serviceIds = (await pool.query(
+      "SELECT id FROM services WHERE code IN ('s1', 's3') ORDER BY code",
+    )).rows.map(row => row.id)
+    const created = await createCleaning({
+      clientName: '  Новый клиент  ',
+      clientPhone: '  +7 900 000-00-00 ',
+      address: '  Новый адрес  ',
+      selectedServiceIds: serviceIds,
+      cabinets: 'selected',
+      moveItems: 'return',
+      doNotTouch: 'Документы',
+      wishes: 'Средство клиента',
+    })
+    assert.equal(created.ok, true)
+    assert.ok(created.cleaningId)
+    const createdRow = (await pool.query(
+      'SELECT number, status, started_at, completed_at, accepted_at, client_token FROM cleanings WHERE id = $1',
+      [created.cleaningId],
+    )).rows[0]
+    assert.match(createdRow.number, /^\d+$/)
+    assert.equal(createdRow.status, 'in_progress')
+    assert.ok(createdRow.started_at instanceof Date)
+    assert.equal(createdRow.completed_at, null)
+    assert.equal(createdRow.accepted_at, null)
+    assert.equal(createdRow.client_token, null)
+    const createdServices = await pool.query(
+      'SELECT service_id, is_done, completed_at FROM cleaning_services WHERE cleaning_id = $1 ORDER BY service_id',
+      [created.cleaningId],
+    )
+    assert.deepEqual(createdServices.rows.map(row => row.service_id), serviceIds)
+    assert.ok(createdServices.rows.every(row => row.is_done === false && row.completed_at === null))
+    const createdRules = (await pool.query(
+      'SELECT cabinets_access, personal_items_access, do_not_touch, special_requests FROM client_rules WHERE cleaning_id = $1',
+      [created.cleaningId],
+    )).rows[0]
+    assert.deepEqual(createdRules, {
+      cabinets_access: 'selected',
+      personal_items_access: 'return',
+      do_not_touch: 'Документы',
+      special_requests: 'Средство клиента',
+    })
+    assert.ok((await getCleanerCleanings()).some(cleaning => cleaning.id === created.cleaningId))
+    const createdData = await getCleaningData(created.cleaningId)
+    assert.equal(createdData.cleaning.client, 'Новый клиент')
+    assert.equal(createdData.cleaning.clientToken, null)
+    assert.equal(createdData.checklist.length, 2)
+
     assert.equal(await getCleaningDataByClientToken('unknown-token'), null)
     assert.deepEqual(await getOrCreateClientLink('99999999-9999-9999-9999-999999999999'), { ok: false })
     const clientLink = await getOrCreateClientLink(id)
