@@ -1,3 +1,5 @@
+begin;
+
 -- CleanTrack — demo-данные для одной уборки (см. lib/mock-data.ts).
 -- Идемпотентно: можно применять повторно без дублирования строк.
 
@@ -67,19 +69,19 @@ where not exists (
   select 1 from client_rules where cleaning_id = '11111111-1111-1111-1111-111111111111'
 );
 
--- Галерея финальных фото уборки. storage_path указывает на ключи в бакете
--- cleaning-photos — сами файлы на этом этапе не загружаются (см. schema.sql),
--- поэтому реальные превью появятся только после ручной загрузки в Storage.
+-- Existing local demo photos; no upload or external storage required.
 insert into photos (cleaning_id, storage_path)
 select '11111111-1111-1111-1111-111111111111', v.storage_path
 from (
   values
-    ('demo/kitchen.png'),
-    ('demo/sink.png'),
-    ('demo/room.png')
+    ('/photos/kitchen.png'),
+    ('/photos/sink.png'),
+    ('/photos/room.png')
 ) as v(storage_path)
 where not exists (
   select 1 from photos p
   where p.cleaning_id = '11111111-1111-1111-1111-111111111111'
     and p.storage_path = v.storage_path
 );
+
+commit;

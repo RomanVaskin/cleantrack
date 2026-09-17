@@ -1,4 +1,6 @@
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import 'server-only'
+import { connection } from 'next/server'
+import { getPostgresPool } from '@/lib/db/postgres'
 import {
   cleaning as mockCleaning,
   clientRules as mockClientRules,
@@ -16,9 +18,7 @@ import type {
 } from '@/lib/types'
 
 /** Уборка, которую показывают /cleaner и /client на этом этапе (без роутинга по id). */
-export const DEMO_CLEANING_ID = process.env.DEMO_CLEANING_ID ?? mockCleaning.id
-
-const PHOTOS_BUCKET = 'cleaning-photos'
+export const DEMO_CLEANING_ID = process.env.DEMO_CLEANING_ID || mockCleaning.id
 
 export interface CleaningData {
   cleaning: Cleaning
@@ -32,7 +32,7 @@ interface CleaningRow {
   number: string | null
   client_name: string | null
   address: string | null
-  started_at: string | null
+  started_at: Date | null
   status: string | null
 }
 
@@ -41,7 +41,8 @@ interface CleaningServiceRow {
   is_selected: boolean
   is_done: boolean
   note: string | null
-  services: { id: string; title: string; sort_order: number } | null
+  service_id: string
+  title: string
 }
 
 interface ClientRulesRow {
@@ -68,7 +69,7 @@ function toStatus(value: string | null): CleaningStatus {
   return value === 'completed' ? 'completed' : 'in_progress'
 }
 
-function formatStartedAt(value: string | null): string {
+function formatStartedAt(value: Date | null): string {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -79,39 +80,40 @@ function formatStartedAt(value: string | null): string {
   })
 }
 
-function resolvePhotoSrc(
-  supabase: NonNullable<ReturnType<typeof createSupabaseServerClient>>,
-  storagePath: string,
-): string {
-  if (storagePath.startsWith('http') || storagePath.startsWith('/')) return storagePath
-  return supabase.storage.from(PHOTOS_BUCKET).getPublicUrl(storagePath).data.publicUrl
-}
-
 /**
- * Читает одну уборку из Supabase (только чтение). Если Supabase не
- * настроен (нет env) или запрос упал — тихо откатывается на mock-данные
- * проекта, не показывая пользователю техническую ошибку.
+ * Reads at request time, so builds never connect to a database or cache demo data.
+ * Missing configuration/read failures retain the existing mock fallback.
  */
 export async function getCleaningData(cleaningId: string): Promise<CleaningData> {
-  const supabase = createSupabaseServerClient()
-  if (!supabase) return getMockCleaningData()
+  await connection()
 
   try {
+    const pool = getPostgresPool()
+    if (!pool) return getMockCleaningData()
+
     const [cleaningRes, servicesRes, rulesRes, photosRes] = await Promise.all([
-      supabase.from('cleanings').select('*').eq('id', cleaningId).maybeSingle(),
-      supabase
-        .from('cleaning_services')
-        .select('id, is_selected, is_done, note, services(id, title, sort_order)')
-        .eq('cleaning_id', cleaningId),
-      supabase.from('client_rules').select('*').eq('cleaning_id', cleaningId).maybeSingle(),
-      supabase.from('photos').select('storage_path').eq('cleaning_id', cleaningId),
+      pool.query<CleaningRow>(
+        'SELECT id, number, client_name, address, started_at, status FROM cleanings WHERE id = $1',
+        [cleaningId],
+      ),
+      pool.query<CleaningServiceRow>(
+        `SELECT cs.id, cs.service_id, cs.is_selected, cs.is_done, cs.note, s.title
+         FROM cleaning_services cs JOIN services s ON s.id = cs.service_id
+         WHERE cs.cleaning_id = $1 ORDER BY s.sort_order, s.id, cs.id`,
+        [cleaningId],
+      ),
+      pool.query<ClientRulesRow>(
+        `SELECT cabinets_access, personal_items_access, do_not_touch, special_requests
+         FROM client_rules WHERE cleaning_id = $1`,
+        [cleaningId],
+      ),
+      pool.query<PhotoRow>(
+        'SELECT storage_path FROM photos WHERE cleaning_id = $1 ORDER BY created_at, id',
+        [cleaningId],
+      ),
     ])
 
-    if (cleaningRes.error || servicesRes.error || rulesRes.error || photosRes.error) {
-      return getMockCleaningData()
-    }
-
-    const cleaningRow = cleaningRes.data as CleaningRow | null
+    const cleaningRow = cleaningRes.rows[0]
     if (!cleaningRow) return getMockCleaningData()
 
     const cleaning: Cleaning = {
@@ -123,21 +125,17 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
       status: toStatus(cleaningRow.status),
     }
 
-    const serviceRows = (servicesRes.data ?? []) as unknown as CleaningServiceRow[]
-    const checklist: ChecklistItem[] = serviceRows
-      .slice()
-      .sort((a, b) => (a.services?.sort_order ?? 0) - (b.services?.sort_order ?? 0))
-      .map((row) => ({
-        id: row.id,
-        serviceId: row.services?.id ?? row.id,
-        label: row.services?.title ?? '',
-        included: row.is_selected,
-        done: row.is_done,
-        photo: null,
-        note: row.note ?? undefined,
-      }))
+    const checklist: ChecklistItem[] = servicesRes.rows.map((row) => ({
+      id: row.id,
+      serviceId: row.service_id,
+      label: row.title,
+      included: row.is_selected,
+      done: row.is_done,
+      photo: null,
+      note: row.note ?? undefined,
+    }))
 
-    const rulesRow = rulesRes.data as ClientRulesRow | null
+    const rulesRow = rulesRes.rows[0]
     const clientRules: ClientRules = rulesRow
       ? {
           cabinets: (rulesRow.cabinets_access as CabinetRule | null) ?? 'none',
@@ -147,9 +145,9 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
         }
       : mockClientRules
 
-    const photoRows = (photosRes.data ?? []) as PhotoRow[]
+    const photoRows = photosRes.rows
     const photos: Photo[] = photoRows.map((row) => ({
-      src: resolvePhotoSrc(supabase, row.storage_path),
+      src: row.storage_path,
       alt: 'Фото уборки',
     }))
 
