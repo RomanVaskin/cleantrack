@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     console.error('[photo-upload]', { status, reason })
     return Response.json({ error: photoUploadError(status) }, { status })
   }
-  if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 25 MiB')
+  if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 50 MiB')
   if (!request.body) return fail(400, 'Missing request body')
   try {
     // Bound memory even for chunked requests without Content-Length.
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
         size += value.byteLength
         if (size > MAX_PHOTO_BYTES) {
           await reader.cancel()
-          return fail(413, 'Source photo exceeds 25 MiB')
+          return fail(413, 'Source photo exceeds 50 MiB')
         }
         chunks.push(Buffer.from(value))
       }

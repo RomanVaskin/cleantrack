@@ -62,7 +62,7 @@ repository. Production uploads require this variable; development defaults to
 `os.tmpdir()/cleantrack-photos`. Never use a `NEXT_PUBLIC_` prefix. No production
 server configuration is changed by this code.
 
-The cleaner uploads JPEG, PNG, WebP, HEIC/HEIF or AVIF (up to 25 MiB) from the
+The cleaner uploads JPEG, PNG, WebP, HEIC/HEIF or AVIF (up to 50 MiB) from the
 gallery or camera. The server detects format from file contents regardless of MIME,
 decodes the image, applies orientation, and resizes within 2400×2400 without
 enlargement. Only the normalized JPEG (quality 82) is stored as UUID.jpg; originals

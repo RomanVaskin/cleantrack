@@ -1,4 +1,4 @@
-export const MAX_PHOTO_BYTES = 25 * 1024 * 1024
+export const MAX_PHOTO_BYTES = 50 * 1024 * 1024
 
 export function photoUploadError(status: number) {
   return status === 413 ? 'Фото слишком большое'

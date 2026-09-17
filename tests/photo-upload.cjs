@@ -8,6 +8,7 @@ mod._compile(ts.transpileModule(fs.readFileSync(require.resolve('../lib/photo-up
 }).outputText, __filename)
 const { uploadCleaningPhoto, MAX_PHOTO_BYTES } = mod.exports
 async function main() {
+  assert.equal(MAX_PHOTO_BYTES, 50 * 1024 * 1024)
   let calls = 0
   global.fetch = async (url, options) => {
     calls++

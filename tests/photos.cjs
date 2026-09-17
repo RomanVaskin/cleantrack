@@ -71,12 +71,12 @@ async function main() {
     }
     for (const type of ['image/heic', 'image/heif']) {
       assert.equal((await upload('bad', type)).status, 415)
-      assert.equal((await upload(Buffer.alloc(25 * 1024 * 1024 + 1), type)).status, 413)
+      assert.equal((await upload(Buffer.alloc(50 * 1024 * 1024 + 1), type)).status, 413)
     }
     assert.equal((await upload('bad', 'image/svg+xml')).status, 415)
     assert.equal((await upload('bad', 'image/jpeg')).status, 415)
-    assert.equal((await upload(Buffer.alloc(25 * 1024 * 1024 + 1), 'image/png')).status, 413)
-    assert.equal((await upload('small', 'image/png', '', { 'content-length': String(25 * 1024 * 1024 + 1) })).status, 413)
+    assert.equal((await upload(Buffer.alloc(50 * 1024 * 1024 + 1), 'image/png')).status, 413)
+    assert.equal((await upload('small', 'image/png', '', { 'content-length': String(50 * 1024 * 1024 + 1) })).status, 413)
     assert.equal((await upload(fixtures[0][1], 'image/jpeg', '?cleaning_service_id=99999999-9999-9999-9999-999999999999')).status, 400)
     // Signatures alone are insufficient; full decoding must succeed.
     assert.equal((await upload(Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex'), 'image/jpeg')).status, 415)

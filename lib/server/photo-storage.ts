@@ -20,7 +20,7 @@ function photoPath(name: string) {
 
 export class PhotoInputError extends Error {
   constructor(public readonly status: 413 | 415) {
-    super(status === 413 ? 'Source photo exceeds 25 MiB' : 'Unsupported or invalid image')
+    super(status === 413 ? 'Source photo exceeds 50 MiB' : 'Unsupported or invalid image')
   }
 }
 
