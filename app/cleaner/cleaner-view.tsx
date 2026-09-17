@@ -22,7 +22,6 @@ import { uploadCleaningPhoto } from '@/lib/photo-upload'
 import { PhotoViewer } from '@/components/photo-viewer'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
-import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import {
   completeCleaning,
@@ -207,7 +206,7 @@ export function CleanerView({
         </div>
       </header>
 
-      <main className="flex-1 px-5 pb-44 pt-4">
+      <main className="flex-1 px-5 pb-24 pt-4">
         {/* Cleaning info */}
         <section className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
@@ -530,7 +529,6 @@ export function CleanerView({
             Завершить уборку
           </Button>
         </div>
-        <BottomNav active="today" />
       </div>
     </div>
   )
