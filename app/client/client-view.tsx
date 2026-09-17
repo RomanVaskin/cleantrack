@@ -8,6 +8,7 @@ import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
 import { Button } from '@/components/ui/button'
 import { acceptCleaning } from '@/lib/data/cleaning-actions'
+import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -111,7 +112,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             </div>
             <div className="flex items-center gap-2">
               <Clock className="size-4 text-muted-foreground" />
-              <span className="font-medium">{cleaning.startedAt}</span>
+              <span className="font-medium">{formatCleaningTime(cleaning.startedAt)}</span>
             </div>
           </dl>
         </section>
@@ -198,14 +199,12 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             <p className="text-lg font-semibold">
               {accepted ? 'Работа принята' : 'Уборка завершена'}
             </p>
-            {accepted && acceptedAt && (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {new Intl.DateTimeFormat('ru-RU', {
-                  dateStyle: 'long',
-                  timeStyle: 'short',
-                  timeZone: 'Europe/Moscow',
-                }).format(new Date(acceptedAt))}
-              </p>
+            {accepted && (
+              <dl className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
+                <HistoryRow label="Уборка начата" value={cleaning.startedAt} />
+                <HistoryRow label="Уборка завершена" value={cleaning.completedAt} />
+                <HistoryRow label="Работа принята" value={acceptedAt} />
+              </dl>
             )}
             {completed && (
               <Button
@@ -229,6 +228,15 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
       {viewer && (
         <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />
       )}
+    </div>
+  )
+}
+
+function HistoryRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium">{value ? formatCleaningDateTime(value) : '—'}</dd>
     </div>
   )
 }

@@ -37,9 +37,11 @@ async function main() {
   assert.equal(getPostgresPool(), pool)
   try {
     await pool.query(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'))
-    const migration = fs.readFileSync(path.join(__dirname, '../db/migrations/001_add_cleaning_acceptance.sql'), 'utf8')
-    await pool.query(migration)
-    await pool.query(migration)
+    for (const name of ['001_add_cleaning_acceptance.sql', '002_add_cleaning_completion.sql']) {
+      const migration = fs.readFileSync(path.join(__dirname, '../db/migrations', name), 'utf8')
+      await pool.query(migration)
+      await pool.query(migration)
+    }
     const seed = fs.readFileSync(path.join(__dirname, '../db/seed.sql'), 'utf8')
     await pool.query(seed)
     await pool.query(seed)
@@ -94,8 +96,16 @@ async function main() {
       assert.deepEqual(await completion, { ok: false })
     } finally { client.release() }
     assert.deepEqual(await updateChecklistItem(itemId, true), { ok: true })
-    assert.deepEqual(await completeCleaning(id), { ok: true })
-    assert.equal((await getCleaningData(id)).cleaning.status, 'completed')
+    const completion = await completeCleaning(id)
+    assert.equal(completion.ok, true)
+    assert.ok(completion.completedAt)
+    const completed = (await getCleaningData(id)).cleaning
+    assert.equal(completed.status, 'completed')
+    assert.equal(completed.completedAt, completion.completedAt)
+    assert.deepEqual(await completeCleaning(id), completion)
+    const completedAtBeforeAcceptance = (
+      await pool.query('SELECT completed_at FROM cleanings WHERE id = $1', [id])
+    ).rows[0].completed_at.toISOString()
     const acceptance = await acceptCleaning(id)
     assert.equal(acceptance.ok, true)
     assert.ok(acceptance.acceptedAt)
@@ -103,8 +113,11 @@ async function main() {
     assert.equal(accepted.status, 'accepted')
     assert.equal(accepted.acceptedAt, acceptance.acceptedAt)
     assert.deepEqual(await acceptCleaning(id), acceptance)
-    const acceptedRow = (await pool.query('SELECT status, accepted_at FROM cleanings WHERE id = $1', [id])).rows[0]
+    const acceptedRow = (
+      await pool.query('SELECT status, completed_at, accepted_at FROM cleanings WHERE id = $1', [id])
+    ).rows[0]
     assert.equal(acceptedRow.status, 'accepted')
+    assert.equal(acceptedRow.completed_at.toISOString(), completedAtBeforeAcceptance)
     assert.equal(acceptedRow.accepted_at.toISOString(), acceptance.acceptedAt)
     assert.equal((await pool.query('SELECT count(*)::int n FROM cleaning_services WHERE NOT is_selected AND NOT is_done')).rows[0].n, 4)
 
@@ -112,7 +125,9 @@ async function main() {
     assert.equal(getPostgresPool(), null)
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
     assert.deepEqual(await updateChecklistItem('s4', true), { ok: true })
-    assert.deepEqual(await completeCleaning(id), { ok: true })
+    const mockCompletion = await completeCleaning(id)
+    assert.equal(mockCompletion.ok, true)
+    assert.ok(mockCompletion.completedAt)
     assert.equal((await acceptCleaning(id)).ok, true)
     assert.deepEqual(await acceptCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 

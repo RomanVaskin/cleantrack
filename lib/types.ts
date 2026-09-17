@@ -11,6 +11,7 @@ export interface Cleaning {
   client: string
   startedAt: string
   status: CleaningStatus
+  completedAt: string | null
   acceptedAt: string | null
 }
 

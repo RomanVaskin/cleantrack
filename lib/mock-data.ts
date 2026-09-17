@@ -15,8 +15,9 @@ export const cleaning: Cleaning = {
   number: '124',
   address: 'Москва, ул. Ленина, 15',
   client: 'Анна',
-  startedAt: '14:05',
+  startedAt: '2026-01-15T11:05:00.000Z',
   status: 'in_progress',
+  completedAt: null,
   acceptedAt: null,
 }
 

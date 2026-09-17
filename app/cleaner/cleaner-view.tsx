@@ -21,6 +21,7 @@ import { ProgressBar } from '@/components/progress-bar'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { completeCleaning, updateChecklistItem } from '@/lib/data/cleaning-actions'
+import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -47,6 +48,7 @@ export function CleanerView({
   const uploadBusy = useRef(false)
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
+  const [completedAt, setCompletedAt] = useState(cleaning.completedAt)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState<string | null>(null)
   const [saveError, setSaveError] = useState(false)
@@ -93,7 +95,9 @@ export function CleanerView({
     if (!result.ok) {
       setStatus(previousStatus)
       setSaveError(true)
+      return
     }
+    setCompletedAt(result.completedAt ?? completedAt)
   }
 
   function choosePhoto(serviceId: string | null) {
@@ -138,6 +142,16 @@ export function CleanerView({
           {done} из {total} услуг выполнено
         </p>
         <p className="mt-1 text-sm text-muted-foreground">Уборка №{cleaning.number}</p>
+        {completedAt && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Уборка завершена: {formatCleaningDateTime(completedAt)}
+          </p>
+        )}
+        {status === 'accepted' && cleaning.acceptedAt && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Работа принята: {formatCleaningDateTime(cleaning.acceptedAt)}
+          </p>
+        )}
         <Link href="/" className="mt-10 w-full">
           <Button size="lg" className="h-14 w-full rounded-2xl text-base">
             На главную
@@ -174,7 +188,7 @@ export function CleanerView({
           <dl className="mt-4 space-y-2.5 text-sm">
             <InfoRow icon={<MapPin className="size-4" />} label="Адрес" value={cleaning.address} />
             <InfoRow icon={<User className="size-4" />} label="Клиент" value={cleaning.client} />
-            <InfoRow icon={<Clock className="size-4" />} label="Начало" value={cleaning.startedAt} />
+            <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />
           </dl>
         </section>
 

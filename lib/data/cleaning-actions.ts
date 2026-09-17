@@ -7,6 +7,10 @@ export interface WriteResult {
   ok: boolean
 }
 
+export interface CompleteCleaningResult extends WriteResult {
+  completedAt?: string
+}
+
 export interface AcceptCleaningResult extends WriteResult {
   acceptedAt?: string
 }
@@ -40,18 +44,22 @@ export async function updateChecklistItem(itemId: string, isDone: boolean): Prom
   }
 }
 
-export async function completeCleaning(cleaningId: string): Promise<WriteResult> {
+export async function completeCleaning(cleaningId: string): Promise<CompleteCleaningResult> {
   try {
     const pool = getPostgresPool()
-    if (!pool) return { ok: true }
+    if (!pool) return { ok: true, completedAt: new Date().toISOString() }
     if (cleaningId !== DEMO_CLEANING_ID) return { ok: false }
 
     return await withTransaction(pool, async (client) => {
-      const cleaning = await client.query(
-        'SELECT id FROM cleanings WHERE id = $1 FOR UPDATE',
+      const cleaningResult = await client.query<{
+        status: string
+        completed_at: Date | null
+      }>(
+        'SELECT status, completed_at FROM cleanings WHERE id = $1 FOR UPDATE',
         [cleaningId],
       )
-      if (cleaning.rowCount !== 1) return { ok: false }
+      const cleaning = cleaningResult.rows[0]
+      if (!cleaning) return { ok: false }
 
       const pending = await client.query(
         `SELECT 1 FROM cleaning_services
@@ -60,11 +68,22 @@ export async function completeCleaning(cleaningId: string): Promise<WriteResult>
       )
       if (pending.rowCount !== 0) return { ok: false }
 
-      const result = await client.query(
-        "UPDATE cleanings SET status = 'completed' WHERE id = $1",
+      if (cleaning.status === 'completed') {
+        return {
+          ok: true,
+          ...(cleaning.completed_at && { completedAt: cleaning.completed_at.toISOString() }),
+        }
+      }
+      if (cleaning.status !== 'in_progress') return { ok: false }
+
+      const result = await client.query<{ completed_at: Date }>(
+        `UPDATE cleanings
+         SET status = 'completed', completed_at = now()
+         WHERE id = $1
+         RETURNING completed_at`,
         [cleaningId],
       )
-      return { ok: result.rowCount === 1 }
+      return { ok: true, completedAt: result.rows[0].completed_at.toISOString() }
     })
   } catch {
     return { ok: false }

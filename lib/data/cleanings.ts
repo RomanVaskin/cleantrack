@@ -35,6 +35,7 @@ interface CleaningRow {
   address: string | null
   started_at: Date | null
   status: string | null
+  completed_at: Date | null
   accepted_at: Date | null
 }
 
@@ -68,17 +69,6 @@ function toStatus(value: string | null): CleaningStatus {
   return value === 'completed' ? 'completed' : 'in_progress'
 }
 
-function formatStartedAt(value: Date | null): string {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Moscow',
-  })
-}
-
 /**
  * Reads at request time, so builds never connect to a database or cache demo data.
  * Missing configuration/read failures retain the existing mock fallback.
@@ -92,7 +82,8 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
 
     const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
       pool.query<CleaningRow>(
-        'SELECT id, number, client_name, address, started_at, status, accepted_at FROM cleanings WHERE id = $1',
+        `SELECT id, number, client_name, address, started_at, status, completed_at, accepted_at
+         FROM cleanings WHERE id = $1`,
         [cleaningId],
       ),
       pool.query<CleaningServiceRow>(
@@ -117,8 +108,9 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
       number: cleaningRow.number ?? '',
       address: cleaningRow.address ?? '',
       client: cleaningRow.client_name ?? '',
-      startedAt: formatStartedAt(cleaningRow.started_at),
+      startedAt: cleaningRow.started_at?.toISOString() ?? '',
       status: toStatus(cleaningRow.status),
+      completedAt: cleaningRow.completed_at?.toISOString() ?? null,
       acceptedAt: cleaningRow.accepted_at?.toISOString() ?? null,
     }
 
