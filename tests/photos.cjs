@@ -41,6 +41,8 @@ async function main() {
       ['image/png', fs.readFileSync(path.join(__dirname, '../public/photos/sink.png'))],
       ['image/webp', Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64')],
     ]
+    const heic = fs.readFileSync(path.join(__dirname, 'fixtures/mobile.heic'))
+    fixtures.push(['image/heic', heic], ['image/heif', heic])
     for (const [type, bytes] of fixtures) {
       const response = await upload(bytes, type, type === 'image/png' ? `?cleaning_service_id=${service}` : '')
       assert.equal(response.status, 201)
@@ -49,14 +51,24 @@ async function main() {
       assert.equal(photo.cleaningServiceId, type === 'image/png' ? service : null)
       const stored = (await pool.query('SELECT storage_path FROM photos WHERE id = $1', [photo.id])).rows[0].storage_path
       assert.match(stored, /^[a-f0-9-]+\.(jpg|png|webp)$/)
-      assert.deepEqual(fs.readFileSync(path.join(directory, stored)), bytes)
+      const converted = type === 'image/heic' || type === 'image/heif'
+      const saved = fs.readFileSync(path.join(directory, stored))
+      if (converted) {
+        assert.match(stored, /\.jpg$/)
+        assert.equal(saved.subarray(0, 3).toString('hex'), 'ffd8ff')
+        assert.notDeepEqual(saved, bytes)
+      } else assert.deepEqual(saved, bytes)
       const fetched = await read(photo.id)
       assert.equal(fetched.status, 200)
-      assert.equal(fetched.headers.get('content-type'), type)
-      assert.deepEqual(Buffer.from(await fetched.arrayBuffer()), bytes)
+      assert.equal(fetched.headers.get('content-type'), converted ? 'image/jpeg' : type)
+      assert.deepEqual(Buffer.from(await fetched.arrayBuffer()), saved)
       // Each page reads this same request-time data after reload.
       for (let reload = 0; reload < 2; reload++) assert.ok((await getCleaningData(id)).photos.some(p => p.id === photo.id))
       if (type === 'image/png') assert.equal((await getCleaningData(id)).checklist.find(i => i.id === service).photo.id, photo.id)
+    }
+    for (const type of ['image/heic', 'image/heif']) {
+      assert.equal((await upload('bad', type)).status, 400)
+      assert.equal((await upload(Buffer.alloc(10 * 1024 * 1024 + 1), type)).status, 413)
     }
     assert.equal((await upload('bad', 'image/svg+xml')).status, 415)
     assert.equal((await upload('bad', 'image/jpeg')).status, 400)
@@ -76,13 +88,28 @@ async function main() {
     assert.equal((await read(photoId)).status, 404)
     await pool.query('UPDATE photos SET storage_path = $2 WHERE id = $1', [photoId, '33333333-3333-3333-3333-333333333333.png'])
     assert.equal((await read(photoId)).status, 404)
+    const originalQuery = pool.query
+    const originalError = console.error
+    const logs = []
+    try {
+      console.error = (...args) => logs.push(args)
+      pool.query = async () => { throw Object.assign(new Error('postgresql://user:SECRET@example/file-content'), { code: 'ECONNREFUSED' }) }
+      const failed = await upload(fixtures[0][1], 'image/jpeg')
+      assert.equal(failed.status, 400)
+      assert.deepEqual(await failed.json(), { error: 'Не удалось загрузить фото' })
+      assert.match(JSON.stringify(logs), /ECONNREFUSED/)
+      assert.doesNotMatch(JSON.stringify(logs), /SECRET|file-content|postgresql/)
+    } finally {
+      pool.query = originalQuery
+      console.error = originalError
+    }
     const before = fs.readdirSync(directory)
     process.env.DATABASE_URL = ''
     assert.equal((await upload(fixtures[0][1], 'image/jpeg')).status, 400)
     assert.deepEqual(fs.readdirSync(directory), before)
     assert.ok((await getCleaningData(id)).photos.every(p => p.src.startsWith('/photos/')))
     assert.equal((await read(created[1])).status, 404)
-    console.log('PASS: JPEG/PNG/WebP, metadata, service binding, reload reads, MIME/size/signature rejection, traversal/symlink/missing-file protection, mock fallback')
+    console.log('PASS: JPEG/PNG/WebP/HEIC/HEIF, metadata, service binding, reload reads, MIME/size/signature rejection, traversal/symlink/missing-file protection, mock fallback')
   } finally {
     await pool.query('DELETE FROM photos WHERE id = ANY($1::uuid[])', [created])
     await pool.end()

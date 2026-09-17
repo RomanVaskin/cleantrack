@@ -388,7 +388,7 @@ export function CleanerView({
           <Button type="button" variant="outline" disabled={uploading} onClick={() => choosePhoto(null)} className="mt-3 rounded-xl">
             <Camera className="size-4" /> Добавить фото
           </Button>
-          <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
+          <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
             const file = event.target.files?.[0]
             event.target.value = ''
             if (file) void attachPhoto(file)

@@ -3,6 +3,8 @@ export const PHOTO_TYPES = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+  'image/heic': 'jpg',
+  'image/heif': 'jpg',
 } as const
 
 export function isPhotoType(type: string): type is keyof typeof PHOTO_TYPES {
