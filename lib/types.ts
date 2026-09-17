@@ -1,4 +1,4 @@
-export type CleaningStatus = 'in_progress' | 'completed'
+export type CleaningStatus = 'in_progress' | 'completed' | 'accepted'
 
 export type CabinetRule = 'all' | 'selected' | 'none'
 export type MoveRule = 'return' | 'agree' | 'none'
@@ -11,6 +11,7 @@ export interface Cleaning {
   client: string
   startedAt: string
   status: CleaningStatus
+  acceptedAt: string | null
 }
 
 /** Каталог услуг, которые в принципе может включать уборка */

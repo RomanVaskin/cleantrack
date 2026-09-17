@@ -6,6 +6,7 @@ create table if not exists cleanings (
   address text not null,
   started_at timestamptz,
   status text not null,
+  accepted_at timestamptz,
   created_at timestamptz not null default now()
 );
 

@@ -35,6 +35,7 @@ interface CleaningRow {
   address: string | null
   started_at: Date | null
   status: string | null
+  accepted_at: Date | null
 }
 
 interface CleaningServiceRow {
@@ -63,6 +64,7 @@ function getMockCleaningData(): CleaningData {
 }
 
 function toStatus(value: string | null): CleaningStatus {
+  if (value === 'accepted') return 'accepted'
   return value === 'completed' ? 'completed' : 'in_progress'
 }
 
@@ -90,7 +92,7 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
 
     const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
       pool.query<CleaningRow>(
-        'SELECT id, number, client_name, address, started_at, status FROM cleanings WHERE id = $1',
+        'SELECT id, number, client_name, address, started_at, status, accepted_at FROM cleanings WHERE id = $1',
         [cleaningId],
       ),
       pool.query<CleaningServiceRow>(
@@ -117,6 +119,7 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
       client: cleaningRow.client_name ?? '',
       startedAt: formatStartedAt(cleaningRow.started_at),
       status: toStatus(cleaningRow.status),
+      acceptedAt: cleaningRow.accepted_at?.toISOString() ?? null,
     }
 
     const checklist: ChecklistItem[] = servicesRes.rows.map((row) => ({

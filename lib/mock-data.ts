@@ -17,6 +17,7 @@ export const cleaning: Cleaning = {
   client: 'Анна',
   startedAt: '14:05',
   status: 'in_progress',
+  acceptedAt: null,
 }
 
 export const photos: Photo[] = [

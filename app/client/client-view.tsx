@@ -7,6 +7,7 @@ import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
 import { Button } from '@/components/ui/button'
+import { acceptCleaning } from '@/lib/data/cleaning-actions'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -20,13 +21,31 @@ interface ClientViewProps {
 
 export function ClientView({ cleaning, checklist, clientRules, photos }: ClientViewProps) {
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
+  const [acceptedAt, setAcceptedAt] = useState(cleaning.acceptedAt)
+  const [accepting, setAccepting] = useState(false)
+  const [acceptError, setAcceptError] = useState(false)
   const [viewer, setViewer] = useState<{ src: string; alt: string } | null>(null)
   const completed = status === 'completed'
+  const accepted = status === 'accepted'
+  const finished = completed || accepted
 
   const active: ChecklistItem[] = useMemo(() => {
     const included = checklist.filter((s) => s.included)
-    return completed ? included.map((s) => ({ ...s, done: true })) : included
-  }, [checklist, completed])
+    return finished ? included.map((s) => ({ ...s, done: true })) : included
+  }, [checklist, finished])
+
+  async function accept() {
+    setAccepting(true)
+    setAcceptError(false)
+    const result = await acceptCleaning(cleaning.id)
+    setAccepting(false)
+    if (!result.ok) {
+      setAcceptError(true)
+      return
+    }
+    setAcceptedAt(result.acceptedAt ?? acceptedAt)
+    setStatus('accepted')
+  }
 
   const { total, done, percent } = countProgress(active)
 
@@ -50,7 +69,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             onClick={() => setStatus('in_progress')}
             className={cn(
               'flex-1 rounded-full py-2 font-medium transition-colors',
-              !completed ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+              !finished ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
             )}
           >
             В процессе
@@ -60,7 +79,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             onClick={() => setStatus('completed')}
             className={cn(
               'flex-1 rounded-full py-2 font-medium transition-colors',
-              completed ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+              finished ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
             )}
           >
             Завершена
@@ -70,7 +89,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
         {/* Status */}
         <section className="mt-4 rounded-2xl border border-border bg-card p-6 text-center">
           <p className="text-sm font-medium text-primary">
-            {completed ? 'Уборка завершена' : 'Уборка в процессе'}
+            {accepted ? 'Работа принята' : completed ? 'Уборка завершена' : 'Уборка в процессе'}
           </p>
           <div className="mt-3 flex flex-col items-center">
             <span className="text-6xl font-semibold tabular-nums tracking-tight text-primary">
@@ -82,7 +101,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             {done} из {total} услуг выполнено
           </p>
           <p className="mt-4 text-base font-medium">
-            {completed ? 'Все услуги выполнены' : 'Уборка идёт по плану'}
+            {finished ? 'Все услуги выполнены' : 'Уборка идёт по плану'}
           </p>
 
           <dl className="mt-5 flex justify-center gap-6 border-t border-border pt-4 text-sm">
@@ -174,72 +193,42 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
           </div>
         </section>
 
-        {/* Acceptance (completed only) */}
-        {completed && <Acceptance />}
+        {finished && (
+          <section className="mt-8 rounded-2xl border border-border bg-card p-6 text-center">
+            <p className="text-lg font-semibold">
+              {accepted ? 'Работа принята' : 'Уборка завершена'}
+            </p>
+            {accepted && acceptedAt && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {new Intl.DateTimeFormat('ru-RU', {
+                  dateStyle: 'long',
+                  timeStyle: 'short',
+                  timeZone: 'Europe/Moscow',
+                }).format(new Date(acceptedAt))}
+              </p>
+            )}
+            {completed && (
+              <Button
+                size="lg"
+                disabled={accepting}
+                onClick={accept}
+                className="mt-5 h-14 w-full rounded-2xl text-base"
+              >
+                {accepting ? 'Принимаем…' : 'Принять работу'}
+              </Button>
+            )}
+            {acceptError && (
+              <p role="alert" className="mt-3 text-sm text-destructive">
+                Не удалось принять работу
+              </p>
+            )}
+          </section>
+        )}
       </main>
 
       {viewer && (
         <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />
       )}
     </div>
-  )
-}
-
-function Acceptance() {
-  const [mode, setMode] = useState<'idle' | 'note' | 'sent'>('idle')
-  const [text, setText] = useState('')
-
-  if (mode === 'sent') {
-    return (
-      <section className="mt-8 rounded-2xl border border-border bg-accent p-6 text-center">
-        <p className="text-base font-medium text-accent-foreground">Спасибо! Ответ отправлен.</p>
-      </section>
-    )
-  }
-
-  return (
-    <section className="mt-8">
-      {mode === 'idle' ? (
-        <div className="flex flex-col gap-3">
-          <Button
-            size="lg"
-            onClick={() => setMode('sent')}
-            className="h-14 rounded-2xl text-base"
-          >
-            Всё хорошо
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={() => setMode('note')}
-            className="h-14 rounded-2xl text-base"
-          >
-            Есть замечание
-          </Button>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-border bg-card p-5">
-          <label htmlFor="note" className="text-base font-medium">
-            Что нужно исправить?
-          </label>
-          <textarea
-            id="note"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            placeholder="Опишите замечание…"
-            className="mt-3 w-full resize-none rounded-xl border border-border bg-background p-3 text-[15px] outline-none focus:ring-2 focus:ring-ring"
-          />
-          <Button
-            size="lg"
-            disabled={text.trim().length === 0}
-            onClick={() => setMode('sent')}
-            className="mt-3 h-14 w-full rounded-2xl text-base"
-          >
-            Отправить
-          </Button>
-        </div>
-      )}
-    </section>
   )
 }

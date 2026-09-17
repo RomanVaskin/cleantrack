@@ -29,7 +29,7 @@ require.extensions['.ts'] = (mod, filename) => {
 
 const { getPostgresPool, withTransaction } = require('../lib/db/postgres.ts')
 const { getCleaningData, DEMO_CLEANING_ID: id } = require('../lib/data/cleanings.ts')
-const { updateChecklistItem, completeCleaning } = require('../lib/data/cleaning-actions.ts')
+const { updateChecklistItem, completeCleaning, acceptCleaning } = require('../lib/data/cleaning-actions.ts')
 const mock = require('../lib/mock-data.ts')
 
 async function main() {
@@ -37,6 +37,9 @@ async function main() {
   assert.equal(getPostgresPool(), pool)
   try {
     await pool.query(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'))
+    const migration = fs.readFileSync(path.join(__dirname, '../db/migrations/001_add_cleaning_acceptance.sql'), 'utf8')
+    await pool.query(migration)
+    await pool.query(migration)
     const seed = fs.readFileSync(path.join(__dirname, '../db/seed.sql'), 'utf8')
     await pool.query(seed)
     await pool.query(seed)
@@ -54,6 +57,7 @@ async function main() {
     assert.deepEqual(data.checklist.map(visibleItem), mock.getInitialChecklist().map(visibleItem))
     assert.deepEqual(data.photos.map(p => p.src).sort(), mock.photos.map(p => p.src).sort())
     const itemId = data.checklist.find(i => !i.done && i.included).id
+    assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.equal((await getCleaningData(id)).cleaning.status, 'in_progress')
     assert.deepEqual(await updateChecklistItem(itemId, true), { ok: true })
@@ -92,6 +96,16 @@ async function main() {
     assert.deepEqual(await updateChecklistItem(itemId, true), { ok: true })
     assert.deepEqual(await completeCleaning(id), { ok: true })
     assert.equal((await getCleaningData(id)).cleaning.status, 'completed')
+    const acceptance = await acceptCleaning(id)
+    assert.equal(acceptance.ok, true)
+    assert.ok(acceptance.acceptedAt)
+    const accepted = (await getCleaningData(id)).cleaning
+    assert.equal(accepted.status, 'accepted')
+    assert.equal(accepted.acceptedAt, acceptance.acceptedAt)
+    assert.deepEqual(await acceptCleaning(id), acceptance)
+    const acceptedRow = (await pool.query('SELECT status, accepted_at FROM cleanings WHERE id = $1', [id])).rows[0]
+    assert.equal(acceptedRow.status, 'accepted')
+    assert.equal(acceptedRow.accepted_at.toISOString(), acceptance.acceptedAt)
     assert.equal((await pool.query('SELECT count(*)::int n FROM cleaning_services WHERE NOT is_selected AND NOT is_done')).rows[0].n, 4)
 
     process.env.DATABASE_URL = ''
@@ -99,13 +113,16 @@ async function main() {
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
     assert.deepEqual(await updateChecklistItem('s4', true), { ok: true })
     assert.deepEqual(await completeCleaning(id), { ok: true })
+    assert.equal((await acceptCleaning(id)).ok, true)
+    assert.deepEqual(await acceptCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 
     process.env.DATABASE_URL = url
     await pool.end()
     assert.deepEqual(await updateChecklistItem(itemId, true), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
+    assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
-    console.log('PASS: seed, reads, timestamps, completion guard, transaction rollback, locking, mock fallback and DB failures')
+    console.log('PASS: seed, reads, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
   } finally {
     if (!pool.ended) await pool.end()
   }

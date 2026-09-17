@@ -125,13 +125,15 @@ export function CleanerView({
     setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, note: value } : s)))
   }
 
-  if (status === 'completed') {
+  if (status !== 'in_progress') {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-6 text-center">
         <span className="flex size-20 items-center justify-center rounded-full bg-accent text-primary">
           <CheckCircle2 className="size-10" />
         </span>
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">Уборка завершена</h1>
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight">
+          {status === 'accepted' ? 'Работа принята' : 'Уборка завершена'}
+        </h1>
         <p className="mt-2 text-lg text-muted-foreground">
           {done} из {total} услуг выполнено
         </p>
