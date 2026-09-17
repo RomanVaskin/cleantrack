@@ -6,7 +6,7 @@ export type MoveRule = 'return' | 'agree' | 'none'
 /** Уборка — единица работы, привязанная к клиенту и адресу */
 export interface Cleaning {
   id: string
-  number: number
+  number: string
   address: string
   client: string
   startedAt: string

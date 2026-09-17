@@ -11,8 +11,8 @@ import type {
 export type { CabinetRule, ChecklistItem, Cleaning, ClientRules, MoveRule, Photo, Service }
 
 export const cleaning: Cleaning = {
-  id: 'cl-124',
-  number: 124,
+  id: '11111111-1111-1111-1111-111111111111',
+  number: '124',
   address: 'Москва, ул. Ленина, 15',
   client: 'Анна',
   startedAt: '14:05',
