@@ -20,6 +20,8 @@ export interface Service {
 }
 
 export interface Photo {
+  id?: string
+  cleaningServiceId?: string | null
   src: string
   alt: string
 }

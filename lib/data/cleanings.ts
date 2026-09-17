@@ -1,5 +1,6 @@
 import 'server-only'
 import { connection } from 'next/server'
+import { getCleaningPhotos } from '@/lib/data/photos'
 import { getPostgresPool } from '@/lib/db/postgres'
 import {
   cleaning as mockCleaning,
@@ -52,10 +53,6 @@ interface ClientRulesRow {
   special_requests: string | null
 }
 
-interface PhotoRow {
-  storage_path: string
-}
-
 function getMockCleaningData(): CleaningData {
   return {
     cleaning: mockCleaning,
@@ -91,7 +88,7 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
     const pool = getPostgresPool()
     if (!pool) return getMockCleaningData()
 
-    const [cleaningRes, servicesRes, rulesRes, photosRes] = await Promise.all([
+    const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
       pool.query<CleaningRow>(
         'SELECT id, number, client_name, address, started_at, status FROM cleanings WHERE id = $1',
         [cleaningId],
@@ -107,10 +104,7 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
          FROM client_rules WHERE cleaning_id = $1`,
         [cleaningId],
       ),
-      pool.query<PhotoRow>(
-        'SELECT storage_path FROM photos WHERE cleaning_id = $1 ORDER BY created_at, id',
-        [cleaningId],
-      ),
+      getCleaningPhotos(cleaningId),
     ])
 
     const cleaningRow = cleaningRes.rows[0]
@@ -131,7 +125,7 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
       label: row.title,
       included: row.is_selected,
       done: row.is_done,
-      photo: null,
+      photo: photos.find((photo) => photo.cleaningServiceId === row.id) ?? null,
       note: row.note ?? undefined,
     }))
 
@@ -144,12 +138,6 @@ export async function getCleaningData(cleaningId: string): Promise<CleaningData>
           wishes: rulesRow.special_requests ?? '',
         }
       : mockClientRules
-
-    const photoRows = photosRes.rows
-    const photos: Photo[] = photoRows.map((row) => ({
-      src: row.storage_path,
-      alt: 'Фото уборки',
-    }))
 
     return { cleaning, checklist, clientRules, photos }
   } catch {

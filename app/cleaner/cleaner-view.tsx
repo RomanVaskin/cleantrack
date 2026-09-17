@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Camera,
@@ -14,6 +14,8 @@ import {
   Pencil,
   User,
 } from 'lucide-react'
+import { uploadCleaningPhoto } from '@/lib/photo-upload'
+import { PhotoViewer } from '@/components/photo-viewer'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { BottomNav } from '@/components/bottom-nav'
@@ -34,8 +36,15 @@ export function CleanerView({
   cleaning,
   checklist: initialChecklist,
   clientRules,
-  photos,
+  photos: initialPhotos,
 }: CleanerViewProps) {
+  const [photos, setPhotos] = useState(initialPhotos)
+  const [uploading, setUploading] = useState(false)
+  const [photoError, setPhotoError] = useState(false)
+  const [viewer, setViewer] = useState<Photo | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const photoTarget = useRef<string | null>(null)
+  const uploadBusy = useRef(false)
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -87,10 +96,29 @@ export function CleanerView({
     }
   }
 
-  function attachPhoto(id: string, index: number) {
-    if (photos.length === 0) return
-    const photo = photos[index % photos.length]
-    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, photo } : s)))
+  function choosePhoto(serviceId: string | null) {
+    photoTarget.current = serviceId
+    fileInput.current?.click()
+  }
+
+  async function attachPhoto(file: File) {
+    if (uploadBusy.current) return
+    uploadBusy.current = true
+    const serviceId = photoTarget.current
+    setUploading(true)
+    setPhotoError(false)
+    try {
+      const photo = await uploadCleaningPhoto(file, serviceId)
+      setPhotos((previous) => [...previous, photo])
+      if (serviceId) {
+        setChecklist((previous) => previous.map((item) => item.id === serviceId ? { ...item, photo } : item))
+      }
+    } catch {
+      setPhotoError(true)
+    } finally {
+      uploadBusy.current = false
+      setUploading(false)
+    }
   }
 
   function updateNote(id: string, value: string) {
@@ -312,7 +340,8 @@ export function CleanerView({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => attachPhoto(item.id, idx)}
+                          onClick={() => choosePhoto(item.id)}
+                          disabled={uploading}
                           className="flex size-11 items-center justify-center rounded-lg border border-border text-muted-foreground"
                           aria-label="Добавить фото"
                         >
@@ -346,11 +375,34 @@ export function CleanerView({
             </ul>
           )}
         </section>
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Фото уборки</h2>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {photos.map((photo) => (
+              <button key={photo.src} type="button" onClick={() => setViewer(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+              </button>
+            ))}
+          </div>
+          <Button type="button" variant="outline" disabled={uploading} onClick={() => choosePhoto(null)} className="mt-3 rounded-xl">
+            <Camera className="size-4" /> Добавить фото
+          </Button>
+          <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void attachPhoto(file)
+          }} />
+        </section>
       </main>
+
+      {viewer && <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />}
 
       {/* Sticky actions */}
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md">
         <div className="border-t border-border bg-background/95 px-5 pb-2 pt-3 backdrop-blur">
+          {uploading && <p role="status" className="mb-2 text-center text-xs text-muted-foreground">Загрузка фото…</p>}
+          {photoError && <p role="alert" className="mb-2 text-center text-xs text-destructive">Не удалось загрузить фото</p>}
           {saveError && (
             <p className="mb-2 text-center text-xs text-destructive">Не удалось сохранить изменение</p>
           )}

@@ -52,12 +52,33 @@ original mock fallback, while configured database write failures return
 Until authentication is implemented, server writes are limited to
 `DEMO_CLEANING_ID` (the seeded UUID by default). Completion checks selected
 services inside a transaction; both write actions lock the cleaning first.
-The existing selection picker, notes and attached demo photos remain local UI
-state. Changing the selected services locally does not change the database's
+The existing selection picker and notes remain local UI state. Changing the selected services locally does not change the database's
 completion requirements.
 
-Photo paths currently point to files under `public/photos`. No upload, storage
-service or authentication is implemented.
+### Local photo storage
+
+Set server-only `CLEANTRACK_UPLOAD_DIR` to a persistent directory outside the
+repository. Production uploads require this variable; development defaults to
+`os.tmpdir()/cleantrack-photos`. Never use a `NEXT_PUBLIC_` prefix. No production
+server configuration is changed by this code.
+
+The cleaner uploads JPEG, PNG or WebP (up to 10 MiB) with a file picker supporting
+gallery selection. The server checks MIME and basic file signatures, generates
+UUID filenames and stores relative identifiers in PostgreSQL. This is not full
+image decoding or resizing. GET `/api/photos/[id]` resolves metadata and reads
+only UUID image filenames, refusing symlinks. Existing seeded demo image paths
+are matched against the fixed mock photo list; arbitrary stored paths are never
+sent to the browser. The client uses the same photos with its existing viewer.
+
+Without DATABASE_URL, demo photos remain visible and uploads fail without writing
+files or metadata. Upload/delete controls are absent from the client; endpoints
+remain unauthenticated and scoped to the demo cleaning at this stage. Deletion is
+not implemented.
+
+Back up files together with PostgreSQL, monitor disk space, and use shared storage
+if running multiple instances. A process crash between file write and database
+insert can leave an orphan file. Temporary development files may be cleaned by
+the OS. Upload files are never stored under public or inside the Git repository.
 
 ### Verification
 
@@ -74,4 +95,10 @@ rollback, and mock/error fallback. No additional test dependency is required.
 
 ```sh
 CLEANTRACK_TEST_DATABASE_URL=postgresql://localhost:55439/postgres node tests/postgres.cjs
+```
+
+Photo integration checks (same disposable database after the test above):
+
+```sh
+CLEANTRACK_TEST_DATABASE_URL=postgresql://localhost:55439/postgres node tests/photos.cjs
 ```
