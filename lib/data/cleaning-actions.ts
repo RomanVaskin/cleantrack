@@ -1,7 +1,10 @@
 'use server'
 
+import { randomBytes } from 'node:crypto'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
 import { DEMO_CLEANING_ID } from '@/lib/data/cleanings'
+
+let mockClientToken: string | null = null
 
 export interface WriteResult {
   ok: boolean
@@ -13,6 +16,37 @@ export interface CompleteCleaningResult extends WriteResult {
 
 export interface AcceptCleaningResult extends WriteResult {
   acceptedAt?: string
+}
+
+export interface ClientLinkResult extends WriteResult {
+  token?: string
+}
+
+export async function getOrCreateClientLink(cleaningId: string): Promise<ClientLinkResult> {
+  try {
+    const pool = getPostgresPool()
+    if (!pool) {
+      if (cleaningId !== DEMO_CLEANING_ID) return { ok: false }
+      mockClientToken ??= randomBytes(24).toString('base64url')
+      return { ok: true, token: mockClientToken }
+    }
+
+    return await withTransaction(pool, async (client) => {
+      const result = await client.query<{ client_token: string | null }>(
+        'SELECT client_token FROM cleanings WHERE id = $1 FOR UPDATE',
+        [cleaningId],
+      )
+      const cleaning = result.rows[0]
+      if (!cleaning) return { ok: false }
+      if (cleaning.client_token) return { ok: true, token: cleaning.client_token }
+
+      const token = randomBytes(24).toString('base64url')
+      await client.query('UPDATE cleanings SET client_token = $2 WHERE id = $1', [cleaningId, token])
+      return { ok: true, token }
+    })
+  } catch {
+    return { ok: false }
+  }
 }
 
 /** Without a database, the existing UI keeps changes in local state. */
@@ -92,9 +126,12 @@ export async function completeCleaning(cleaningId: string): Promise<CompleteClea
 
 export async function acceptCleaning(cleaningId: string): Promise<AcceptCleaningResult> {
   try {
-    if (cleaningId !== DEMO_CLEANING_ID) return { ok: false }
     const pool = getPostgresPool()
-    if (!pool) return { ok: true, acceptedAt: new Date().toISOString() }
+    if (!pool) {
+      return cleaningId === DEMO_CLEANING_ID
+        ? { ok: true, acceptedAt: new Date().toISOString() }
+        : { ok: false }
+    }
 
     return await withTransaction(pool, async (client) => {
       const result = await client.query<{ status: string; accepted_at: Date | null }>(

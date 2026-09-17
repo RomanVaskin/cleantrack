@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronLeft,
   Clock,
+  Copy,
+  Link2,
   Lock,
   MapPin,
   Pencil,
@@ -20,7 +22,11 @@ import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
-import { completeCleaning, updateChecklistItem } from '@/lib/data/cleaning-actions'
+import {
+  completeCleaning,
+  getOrCreateClientLink,
+  updateChecklistItem,
+} from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
@@ -49,6 +55,7 @@ export function CleanerView({
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [completedAt, setCompletedAt] = useState(cleaning.completedAt)
+  const [clientToken, setClientToken] = useState(cleaning.clientToken)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState<string | null>(null)
   const [saveError, setSaveError] = useState(false)
@@ -152,6 +159,12 @@ export function CleanerView({
             Работа принята: {formatCleaningDateTime(cleaning.acceptedAt)}
           </p>
         )}
+        <ClientLinkBlock
+          cleaningId={cleaning.id}
+          token={clientToken}
+          onToken={setClientToken}
+          className="mt-6 w-full"
+        />
         <Link href="/" className="mt-10 w-full">
           <Button size="lg" className="h-14 w-full rounded-2xl text-base">
             На главную
@@ -191,6 +204,13 @@ export function CleanerView({
             <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />
           </dl>
         </section>
+
+        <ClientLinkBlock
+          cleaningId={cleaning.id}
+          token={clientToken}
+          onToken={setClientToken}
+          className="mt-4"
+        />
 
         {/* Client rules */}
         <section className="mt-4 rounded-2xl border border-border bg-card p-5">
@@ -434,6 +454,83 @@ export function CleanerView({
         <BottomNav active="today" />
       </div>
     </div>
+  )
+}
+
+function ClientLinkBlock({
+  cleaningId,
+  token,
+  onToken,
+  className,
+}: {
+  cleaningId: string
+  token: string | null
+  onToken: (token: string) => void
+  className?: string
+}) {
+  const [creating, setCreating] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  async function createLink() {
+    setCreating(true)
+    setError(false)
+    const result = await getOrCreateClientLink(cleaningId)
+    setCreating(false)
+    if (!result.ok || !result.token) {
+      setError(true)
+      return
+    }
+    onToken(result.token)
+  }
+
+  async function copyLink() {
+    if (!token) return
+    const url = `${window.location.origin}/client/${token}`
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(url)
+    } catch {
+      window.prompt('Скопируйте ссылку:', url)
+    }
+    setCopied(true)
+  }
+
+  return (
+    <section className={cn('rounded-2xl border border-border bg-card p-5 text-left', className)}>
+      <div className="flex items-center gap-2">
+        <Link2 className="size-4 text-primary" />
+        <h2 className="text-base font-semibold tracking-tight">Ссылка для клиента</h2>
+      </div>
+      {token ? (
+        <Button type="button" variant="outline" onClick={copyLink} className="mt-4 w-full rounded-xl">
+          <Copy className="size-4" />
+          Скопировать ссылку
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={creating}
+          onClick={createLink}
+          className="mt-4 w-full rounded-xl"
+        >
+          {creating ? 'Создаём…' : 'Создать ссылку для клиента'}
+        </Button>
+      )}
+      {copied && <p className="mt-2 text-center text-sm text-primary">Ссылка скопирована</p>}
+      {error && (
+        <p role="alert" className="mt-2 text-center text-sm text-destructive">
+          Не удалось создать ссылку
+        </p>
+      )}
+    </section>
   )
 }
 

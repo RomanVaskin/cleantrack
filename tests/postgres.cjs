@@ -28,8 +28,17 @@ require.extensions['.ts'] = (mod, filename) => {
 }
 
 const { getPostgresPool, withTransaction } = require('../lib/db/postgres.ts')
-const { getCleaningData, DEMO_CLEANING_ID: id } = require('../lib/data/cleanings.ts')
-const { updateChecklistItem, completeCleaning, acceptCleaning } = require('../lib/data/cleaning-actions.ts')
+const {
+  getCleaningData,
+  getCleaningDataByClientToken,
+  DEMO_CLEANING_ID: id,
+} = require('../lib/data/cleanings.ts')
+const {
+  updateChecklistItem,
+  completeCleaning,
+  acceptCleaning,
+  getOrCreateClientLink,
+} = require('../lib/data/cleaning-actions.ts')
 const mock = require('../lib/mock-data.ts')
 
 async function main() {
@@ -37,7 +46,11 @@ async function main() {
   assert.equal(getPostgresPool(), pool)
   try {
     await pool.query(fs.readFileSync(path.join(__dirname, '../db/schema.sql'), 'utf8'))
-    for (const name of ['001_add_cleaning_acceptance.sql', '002_add_cleaning_completion.sql']) {
+    for (const name of [
+      '001_add_cleaning_acceptance.sql',
+      '002_add_cleaning_completion.sql',
+      '003_add_client_token.sql',
+    ]) {
       const migration = fs.readFileSync(path.join(__dirname, '../db/migrations', name), 'utf8')
       await pool.query(migration)
       await pool.query(migration)
@@ -58,6 +71,20 @@ async function main() {
     const visibleItem = ({ label, included, done, note, photo }) => ({ label, included, done, note, photo })
     assert.deepEqual(data.checklist.map(visibleItem), mock.getInitialChecklist().map(visibleItem))
     assert.deepEqual(data.photos.map(p => p.src).sort(), mock.photos.map(p => p.src).sort())
+    assert.equal(await getCleaningDataByClientToken('unknown-token'), null)
+    assert.deepEqual(await getOrCreateClientLink('99999999-9999-9999-9999-999999999999'), { ok: false })
+    const clientLink = await getOrCreateClientLink(id)
+    assert.equal(clientLink.ok, true)
+    assert.match(clientLink.token, /^[A-Za-z0-9_-]{32}$/)
+    assert.notEqual(clientLink.token, id)
+    assert.deepEqual(await getOrCreateClientLink(id), clientLink)
+    const storedToken = (
+      await pool.query('SELECT client_token FROM cleanings WHERE id = $1', [id])
+    ).rows[0].client_token
+    assert.equal(storedToken, clientLink.token)
+    const linkedData = await getCleaningDataByClientToken(clientLink.token)
+    assert.equal(linkedData.cleaning.id, id)
+    assert.equal(linkedData.cleaning.clientToken, clientLink.token)
     const itemId = data.checklist.find(i => !i.done && i.included).id
     assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
@@ -106,12 +133,17 @@ async function main() {
     const completedAtBeforeAcceptance = (
       await pool.query('SELECT completed_at FROM cleanings WHERE id = $1', [id])
     ).rows[0].completed_at.toISOString()
-    const acceptance = await acceptCleaning(id)
+    const linkedCompleted = await getCleaningDataByClientToken(clientLink.token)
+    assert.equal(linkedCompleted.cleaning.status, 'completed')
+    const acceptance = await acceptCleaning(linkedCompleted.cleaning.id)
     assert.equal(acceptance.ok, true)
     assert.ok(acceptance.acceptedAt)
     const accepted = (await getCleaningData(id)).cleaning
     assert.equal(accepted.status, 'accepted')
     assert.equal(accepted.acceptedAt, acceptance.acceptedAt)
+    const linkedAccepted = await getCleaningDataByClientToken(clientLink.token)
+    assert.equal(linkedAccepted.cleaning.status, 'accepted')
+    assert.equal(linkedAccepted.cleaning.acceptedAt, acceptance.acceptedAt)
     assert.deepEqual(await acceptCleaning(id), acceptance)
     const acceptedRow = (
       await pool.query('SELECT status, completed_at, accepted_at FROM cleanings WHERE id = $1', [id])
@@ -128,6 +160,11 @@ async function main() {
     const mockCompletion = await completeCleaning(id)
     assert.equal(mockCompletion.ok, true)
     assert.ok(mockCompletion.completedAt)
+    const mockLink = await getOrCreateClientLink(id)
+    assert.equal(mockLink.ok, true)
+    assert.match(mockLink.token, /^[A-Za-z0-9_-]{32}$/)
+    assert.deepEqual(await getOrCreateClientLink(id), mockLink)
+    assert.equal(await getCleaningDataByClientToken(mockLink.token), null)
     assert.equal((await acceptCleaning(id)).ok, true)
     assert.deepEqual(await acceptCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 
@@ -137,7 +174,7 @@ async function main() {
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
-    console.log('PASS: seed, reads, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
+    console.log('PASS: seed, reads, share tokens, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
   } finally {
     if (!pool.ended) await pool.end()
   }

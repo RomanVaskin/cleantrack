@@ -13,6 +13,7 @@ export interface Cleaning {
   status: CleaningStatus
   completedAt: string | null
   acceptedAt: string | null
+  clientToken: string | null
 }
 
 /** Каталог услуг, которые в принципе может включать уборка */

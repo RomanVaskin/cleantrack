@@ -8,6 +8,7 @@ create table if not exists cleanings (
   status text not null,
   completed_at timestamptz,
   accepted_at timestamptz,
+  client_token text unique,
   created_at timestamptz not null default now()
 );
 

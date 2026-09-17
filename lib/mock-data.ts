@@ -19,6 +19,7 @@ export const cleaning: Cleaning = {
   status: 'in_progress',
   completedAt: null,
   acceptedAt: null,
+  clientToken: null,
 }
 
 export const photos: Photo[] = [
