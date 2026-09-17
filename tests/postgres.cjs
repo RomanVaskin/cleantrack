@@ -31,6 +31,7 @@ const { getPostgresPool, withTransaction } = require('../lib/db/postgres.ts')
 const {
   getCleaningData,
   getCleaningDataByClientToken,
+  getCleanerCleanings,
   DEMO_CLEANING_ID: id,
 } = require('../lib/data/cleanings.ts')
 const {
@@ -68,6 +69,11 @@ async function main() {
       (SELECT count(*)::int FROM photos) photos`)
     assert.deepEqual(counts.rows[0], { cleanings: 1, services: 12, checklist: 12, rules: 1, photos: 3 })
     const data = await getCleaningData(id)
+    const cleanerCleanings = await getCleanerCleanings()
+    assert.equal(cleanerCleanings.length, 1)
+    assert.equal(cleanerCleanings[0].id, id)
+    assert.deepEqual(cleanerCleanings[0].progress, { done: 3, total: 8, percent: 38 })
+    assert.equal(cleanerCleanings[0].status, 'in_progress')
     assert.deepEqual(data.cleaning, mock.cleaning)
     assert.deepEqual(data.clientRules, mock.clientRules)
     const visibleItem = ({ label, included, done, note, photo }) => ({ label, included, done, note, photo })
@@ -193,6 +199,17 @@ async function main() {
     process.env.DATABASE_URL = ''
     assert.equal(getPostgresPool(), null)
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
+    assert.deepEqual((await getCleanerCleanings())[0], {
+      id: mock.cleaning.id,
+      number: mock.cleaning.number,
+      clientName: mock.cleaning.client,
+      address: mock.cleaning.address,
+      startedAt: mock.cleaning.startedAt,
+      status: mock.cleaning.status,
+      completedAt: mock.cleaning.completedAt,
+      acceptedAt: mock.cleaning.acceptedAt,
+      progress: { done: 3, total: 8, percent: 38 },
+    })
     assert.deepEqual(await updateChecklistItem('s4', true), { ok: true })
     const mockCompletion = await completeCleaning(id)
     assert.equal(mockCompletion.ok, true)

@@ -205,9 +205,9 @@ export function CleanerView({
           canCreate={hasClientDetails}
           className="mt-6 w-full"
         />
-        <Link href="/" className="mt-10 w-full">
+        <Link href="/cleaner/jobs" className="mt-10 w-full">
           <Button size="lg" className="h-14 w-full rounded-2xl text-base">
-            На главную
+            К списку уборок
           </Button>
         </Link>
         <Link href="/client" className="mt-3 text-sm text-muted-foreground underline">
@@ -221,7 +221,7 @@ export function CleanerView({
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
       <header className="sticky top-0 z-20 border-b border-border bg-background/90 px-5 py-3 backdrop-blur">
         <div className="flex items-center justify-between">
-          <Link href="/" aria-label="Назад" className="-ml-2 flex size-9 items-center justify-center rounded-full text-muted-foreground">
+          <Link href="/cleaner/jobs" aria-label="Назад" className="-ml-2 flex size-9 items-center justify-center rounded-full text-muted-foreground">
             <ChevronLeft className="size-6" />
           </Link>
           <Logo />

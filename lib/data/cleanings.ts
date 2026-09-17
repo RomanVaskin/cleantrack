@@ -28,6 +28,18 @@ export interface CleaningData {
   photos: Photo[]
 }
 
+export interface CleanerCleaning {
+  id: string
+  number: string
+  clientName: string
+  address: string
+  startedAt: string
+  status: CleaningStatus
+  completedAt: string | null
+  acceptedAt: string | null
+  progress: { done: number; total: number; percent: number }
+}
+
 interface CleaningRow {
   id: string
   number: string | null
@@ -39,6 +51,19 @@ interface CleaningRow {
   completed_at: Date | null
   accepted_at: Date | null
   client_token: string | null
+}
+
+interface CleanerCleaningRow {
+  id: string
+  number: string | null
+  client_name: string | null
+  address: string | null
+  started_at: Date | null
+  status: string | null
+  completed_at: Date | null
+  accepted_at: Date | null
+  done: number | string
+  total: number | string
 }
 
 interface CleaningServiceRow {
@@ -69,6 +94,72 @@ function getMockCleaningData(): CleaningData {
 function toStatus(value: string | null): CleaningStatus {
   if (value === 'accepted') return 'accepted'
   return value === 'completed' ? 'completed' : 'in_progress'
+}
+
+function toProgress(done: number | string, total: number | string) {
+  const doneCount = Number(done)
+  const totalCount = Number(total)
+  return {
+    done: doneCount,
+    total: totalCount,
+    percent: totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100),
+  }
+}
+
+function getMockCleanerCleanings(): CleanerCleaning[] {
+  const checklist = getMockChecklist().filter((item) => item.included)
+  return [{
+    id: mockCleaning.id,
+    number: mockCleaning.number,
+    clientName: mockCleaning.client,
+    address: mockCleaning.address,
+    startedAt: mockCleaning.startedAt,
+    status: mockCleaning.status,
+    completedAt: mockCleaning.completedAt,
+    acceptedAt: mockCleaning.acceptedAt,
+    progress: toProgress(checklist.filter((item) => item.done).length, checklist.length),
+  }]
+}
+
+export async function getCleanerCleanings(): Promise<CleanerCleaning[]> {
+  await connection()
+
+  try {
+    const pool = getPostgresPool()
+    if (!pool) return getMockCleanerCleanings()
+
+    const result = await pool.query<CleanerCleaningRow>(
+      `SELECT c.id, c.number, c.client_name, c.address, c.started_at, c.status,
+              c.completed_at, c.accepted_at,
+              count(cs.id) FILTER (WHERE cs.is_selected) AS total,
+              count(cs.id) FILTER (WHERE cs.is_selected AND cs.is_done) AS done
+       FROM cleanings c
+       LEFT JOIN cleaning_services cs ON cs.cleaning_id = c.id
+       GROUP BY c.id
+       ORDER BY CASE c.status
+         WHEN 'in_progress' THEN 0
+         WHEN 'completed' THEN 1
+         WHEN 'accepted' THEN 2
+         ELSE 3
+       END,
+       COALESCE(c.started_at, c.created_at) DESC,
+       c.created_at DESC`,
+    )
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      number: row.number ?? '',
+      clientName: row.client_name ?? '',
+      address: row.address ?? '',
+      startedAt: row.started_at?.toISOString() ?? '',
+      status: toStatus(row.status),
+      completedAt: row.completed_at?.toISOString() ?? null,
+      acceptedAt: row.accepted_at?.toISOString() ?? null,
+      progress: toProgress(row.done, row.total),
+    }))
+  } catch {
+    return getMockCleanerCleanings()
+  }
 }
 
 /**

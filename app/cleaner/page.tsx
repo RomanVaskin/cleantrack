@@ -1,7 +1,5 @@
-import { DEMO_CLEANING_ID, getCleaningData } from '@/lib/data/cleanings'
-import { CleanerView } from './cleaner-view'
+import { redirect } from 'next/navigation'
 
-export default async function CleanerPage() {
-  const data = await getCleaningData(DEMO_CLEANING_ID)
-  return <CleanerView {...data} />
+export default function CleanerPage() {
+  redirect('/cleaner/jobs')
 }
