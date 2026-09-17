@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronLeft, Circle, Clock, Lock, MapPin, User } from 'lucide-react'
+import { Camera, Check, ChevronLeft, Circle, Clock, Lock, MapPin, User } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
 import { Button } from '@/components/ui/button'
 import { acceptCleaning } from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
+import { getCleaningStatusLabel } from '@/lib/cleaning-status'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -30,10 +31,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
   const accepted = status === 'accepted'
   const finished = completed || accepted
 
-  const active: ChecklistItem[] = useMemo(() => {
-    const included = checklist.filter((s) => s.included)
-    return finished ? included.map((s) => ({ ...s, done: true })) : included
-  }, [checklist, finished])
+  const active: ChecklistItem[] = useMemo(() => checklist.filter((s) => s.included), [checklist])
 
   async function accept() {
     setAccepting(true)
@@ -63,61 +61,20 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
       </header>
 
       <main className="flex-1 px-5 pb-12 pt-4">
-        {/* Demo state switch */}
-        <div className="flex rounded-full bg-secondary p-1 text-sm">
-          <button
-            type="button"
-            onClick={() => setStatus('in_progress')}
-            className={cn(
-              'flex-1 rounded-full py-2 font-medium transition-colors',
-              !finished ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-          >
-            В процессе
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatus('completed')}
-            className={cn(
-              'flex-1 rounded-full py-2 font-medium transition-colors',
-              finished ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-            )}
-          >
-            Завершена
-          </button>
-        </div>
-
-        {/* Status */}
-        <section className="mt-4 rounded-2xl border border-border bg-card p-6 text-center">
-          <p className="text-sm font-medium text-primary">
-            {accepted ? 'Работа принята' : completed ? 'Уборка завершена' : 'Уборка в процессе'}
-          </p>
-          <div className="mt-3 flex flex-col items-center">
-            <span className="text-6xl font-semibold tabular-nums tracking-tight text-primary">
-              {percent}%
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">Уборка №{cleaning.number}</h1>
+            <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
+              {getCleaningStatusLabel(status)}
             </span>
           </div>
-          <ProgressBar percent={percent} className="mx-auto mt-5 max-w-xs" />
-          <p className="mt-3 text-sm text-muted-foreground">
-            {done} из {total} услуг выполнено
-          </p>
-          <p className="mt-4 text-base font-medium">
-            {finished ? 'Все услуги выполнены' : 'Уборка идёт по плану'}
-          </p>
-
-          <dl className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 border-t border-border pt-4 text-sm">
-            <div className="flex items-center gap-2">
-              <User className="size-4 text-muted-foreground" />
-              <span className="font-medium">{cleaning.client}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <MapPin className="size-4 text-muted-foreground" />
-              <span className="font-medium">{cleaning.address}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground" />
-              <span className="font-medium">{formatCleaningTime(cleaning.startedAt)}</span>
-            </div>
+          <dl className="mt-4 space-y-2.5 text-sm">
+            <SummaryRow icon={<User className="size-4" />} label="Клиент" value={cleaning.client || 'Не указан'} />
+            <SummaryRow icon={<MapPin className="size-4" />} label="Адрес" value={cleaning.address || 'Не указан'} />
+            <SummaryRow icon={<Check className="size-4" />} label="Прогресс" value={`${done} из ${total} услуг выполнено`} />
+            <SummaryRow icon={<Camera className="size-4" />} label="Фото" value={`${photos.length} фото`} />
+            {finished ? <HistoryRow label="Завершено" value={cleaning.completedAt} /> : <SummaryRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />}
+            {accepted && <HistoryRow label="Принято клиентом" value={acceptedAt} />}
           </dl>
         </section>
 
@@ -241,6 +198,16 @@ function HistoryRow({ label, value }: { label: string; value: string | null }) {
     <div className="flex justify-between gap-4">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right font-medium">{value ? formatCleaningDateTime(value) : '—'}</dd>
+    </div>
+  )
+}
+
+function SummaryRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-muted-foreground">{icon}</span>
+      <dt className="w-20 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="font-medium text-foreground">{value}</dd>
     </div>
   )
 }

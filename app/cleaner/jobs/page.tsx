@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, MapPin, Plus } from 'lucide-react'
+import { ArrowRight, CalendarDays, Camera, MapPin, Plus } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { getCleanerCleanings } from '@/lib/data/cleanings'
 import { formatCleaningDateTime } from '@/lib/date-format'
+import { getCleaningStatusLabel } from '@/lib/cleaning-status'
 import type { CleanerCleaning } from '@/lib/data/cleanings'
 
 export default async function CleanerJobsPage() {
@@ -59,6 +60,10 @@ function CleaningCard({ cleaning }: { cleaning: CleanerCleaning }) {
         </div>
         <ProgressBar percent={cleaning.progress.percent} className="mt-2" />
       </div>
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+        <Camera className="size-4 shrink-0" />
+        <span>Фото: {cleaning.photoCount}</span>
+      </div>
       <div className="mt-4 flex items-center justify-end gap-1 text-sm font-medium text-primary">
         Открыть <ArrowRight className="size-4" />
       </div>
@@ -67,7 +72,7 @@ function CleaningCard({ cleaning }: { cleaning: CleanerCleaning }) {
 }
 
 function StatusBadge({ status }: { status: CleanerCleaning['status'] }) {
-  const label = status === 'accepted' ? 'Принята' : status === 'completed' ? 'Завершена' : 'В процессе'
+  const label = getCleaningStatusLabel(status)
   return (
     <span className={status === 'accepted'
       ? 'shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'

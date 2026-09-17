@@ -39,6 +39,7 @@ export interface CleanerCleaning {
   completedAt: string | null
   acceptedAt: string | null
   progress: { done: number; total: number; percent: number }
+  photoCount: number
 }
 
 export interface CatalogService {
@@ -70,6 +71,7 @@ interface CleanerCleaningRow {
   accepted_at: Date | null
   done: number | string
   total: number | string
+  photo_count: number | string
 }
 
 interface CleaningServiceRow {
@@ -124,6 +126,7 @@ function getMockCleanerCleanings(): CleanerCleaning[] {
     completedAt: mockCleaning.completedAt,
     acceptedAt: mockCleaning.acceptedAt,
     progress: toProgress(checklist.filter((item) => item.done).length, checklist.length),
+    photoCount: mockPhotos.length,
   }]
 }
 
@@ -154,7 +157,8 @@ export async function getCleanerCleanings(): Promise<CleanerCleaning[]> {
       `SELECT c.id, c.number, c.client_name, c.address, c.started_at, c.status,
               c.completed_at, c.accepted_at,
               count(cs.id) FILTER (WHERE cs.is_selected) AS total,
-              count(cs.id) FILTER (WHERE cs.is_selected AND cs.is_done) AS done
+              count(cs.id) FILTER (WHERE cs.is_selected AND cs.is_done) AS done,
+              (SELECT count(*) FROM photos p WHERE p.cleaning_id = c.id) AS photo_count
        FROM cleanings c
        LEFT JOIN cleaning_services cs ON cs.cleaning_id = c.id
        GROUP BY c.id
@@ -178,6 +182,7 @@ export async function getCleanerCleanings(): Promise<CleanerCleaning[]> {
       completedAt: row.completed_at?.toISOString() ?? null,
       acceptedAt: row.accepted_at?.toISOString() ?? null,
       progress: toProgress(row.done, row.total),
+      photoCount: Number(row.photo_count),
     }))
   } catch {
     return getMockCleanerCleanings()

@@ -32,6 +32,7 @@ import {
   updateChecklistItem,
 } from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
+import { getCleaningStatusLabel } from '@/lib/cleaning-status'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -212,7 +213,7 @@ export function CleanerView({
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold tracking-tight">Уборка №{cleaning.number}</h1>
             <span className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">
-              В процессе
+              {getCleaningStatusLabel(status)}
             </span>
           </div>
           <dl className="mt-4 space-y-2.5 text-sm">
@@ -583,7 +584,7 @@ function CompletedCleaningView({
               'shrink-0 rounded-full px-3 py-1 text-xs font-medium',
               accepted ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground',
             )}>
-              {accepted ? 'Принята клиентом' : 'Завершена'}
+              {getCleaningStatusLabel(status)}
             </span>
           </div>
           <dl className="mt-4 space-y-2.5 text-sm">
