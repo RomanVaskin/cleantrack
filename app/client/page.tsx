@@ -2,26 +2,33 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronLeft, Circle, Clock, MapPin } from 'lucide-react'
+import { Check, ChevronLeft, Circle, Clock, Lock, MapPin } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
 import { Button } from '@/components/ui/button'
-import { cleaning, countProgress, initialZones, photos, type Zone } from '@/lib/mock-data'
+import {
+  cabinetOptions,
+  cleaning,
+  clientRules,
+  countProgress,
+  initialServices,
+  moveOptions,
+  photos,
+  type Service,
+} from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
 
 export default function ClientPage() {
   const [completed, setCompleted] = useState(false)
   const [viewer, setViewer] = useState<{ src: string; alt: string } | null>(null)
 
-  const zones: Zone[] = useMemo(
-    () =>
-      completed
-        ? initialZones.map((z) => ({ ...z, items: z.items.map((i) => ({ ...i, done: true })) }))
-        : initialZones,
-    [completed],
-  )
-  const { total, done, percent } = countProgress(zones)
+  const active: Service[] = useMemo(() => {
+    const included = initialServices.filter((s) => s.included)
+    return completed ? included.map((s) => ({ ...s, done: true })) : included
+  }, [completed])
+
+  const { total, done, percent } = countProgress(active)
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
@@ -72,10 +79,10 @@ export default function ClientPage() {
           </div>
           <ProgressBar percent={percent} className="mx-auto mt-5 max-w-xs" />
           <p className="mt-3 text-sm text-muted-foreground">
-            {done} из {total} пунктов выполнено
+            {done} из {total} услуг выполнено
           </p>
           <p className="mt-4 text-base font-medium">
-            {completed ? 'Все пункты выполнены ✓' : 'Уборка идёт по плану'}
+            {completed ? 'Все услуги выполнены' : 'Уборка идёт по плану'}
           </p>
 
           <dl className="mt-5 flex justify-center gap-6 border-t border-border pt-4 text-sm">
@@ -90,41 +97,62 @@ export default function ClientPage() {
           </dl>
         </section>
 
-        {/* Zones (read-only) */}
-        {zones.map((zone) => (
-          <section key={zone.id} className="mt-6">
-            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {zone.title}
-            </h2>
-            <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
-              {zone.items.map((item, idx) => (
-                <li
-                  key={item.id}
+        {/* Active services (read-only live status) */}
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Услуги уборки
+          </h2>
+          <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
+            {active.map((item, idx) => (
+              <li
+                key={item.id}
+                className={cn(
+                  'flex min-h-[56px] items-center gap-3 px-4 py-3',
+                  idx > 0 && 'border-t border-border',
+                )}
+              >
+                {item.done ? (
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-4" />
+                  </span>
+                ) : (
+                  <Circle className="size-6 shrink-0 text-border" strokeWidth={2} />
+                )}
+                <span
                   className={cn(
-                    'flex min-h-[52px] items-center gap-3 px-4 py-3',
-                    idx > 0 && 'border-t border-border',
+                    'text-[15px] leading-snug',
+                    item.done ? 'font-medium text-foreground' : 'text-muted-foreground',
                   )}
                 >
-                  {item.done ? (
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="size-4" />
-                    </span>
-                  ) : (
-                    <Circle className="size-6 shrink-0 text-border" strokeWidth={2} />
-                  )}
-                  <span
-                    className={cn(
-                      'text-[15px]',
-                      item.done ? 'font-medium text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {item.label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* Client rules summary (read-only) */}
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Ваши правила
+          </h2>
+          <div className="mt-2 rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center gap-2">
+              <Lock className="size-4 text-primary" />
+              <p className="text-sm font-medium">Клинер видит эти правила</p>
+            </div>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Шкафы и тумбочки</dt>
+                <dd className="text-right font-medium">{cabinetOptions[clientRules.cabinets]}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Личные вещи</dt>
+                <dd className="text-right font-medium">{moveOptions[clientRules.moveItems]}</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
 
         {/* Photos */}
         <section className="mt-6">
