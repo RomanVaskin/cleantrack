@@ -23,25 +23,26 @@ import {
   cleaning,
   clientRules,
   countProgress,
-  initialServices,
+  getInitialChecklist,
   moveOptions,
   photos,
-  type Service,
+  type ChecklistItem,
 } from '@/lib/mock-data'
+import type { CleaningStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export default function CleanerPage() {
-  const [services, setServices] = useState<Service[]>(initialServices)
-  const [finished, setFinished] = useState(false)
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(getInitialChecklist)
+  const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState<string | null>(null)
 
-  const { total, done, percent } = useMemo(() => countProgress(services), [services])
-  const active = useMemo(() => services.filter((s) => s.included), [services])
+  const { total, done, percent } = useMemo(() => countProgress(checklist), [checklist])
+  const active = useMemo(() => checklist.filter((s) => s.included), [checklist])
   const includedCount = active.length
 
   function toggleIncluded(id: string) {
-    setServices((prev) =>
+    setChecklist((prev) =>
       prev.map((s) =>
         s.id === id ? { ...s, included: !s.included, done: false, photo: null } : s,
       ),
@@ -49,19 +50,19 @@ export default function CleanerPage() {
   }
 
   function toggleDone(id: string) {
-    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, done: !s.done } : s)))
+    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: !s.done } : s)))
   }
 
   function attachPhoto(id: string, index: number) {
-    const src = photos[index % photos.length].src
-    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, photo: src } : s)))
+    const photo = photos[index % photos.length]
+    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, photo } : s)))
   }
 
   function updateNote(id: string, value: string) {
-    setServices((prev) => prev.map((s) => (s.id === id ? { ...s, note: value } : s)))
+    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, note: value } : s)))
   }
 
-  if (finished) {
+  if (status === 'completed') {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-6 text-center">
         <span className="flex size-20 items-center justify-center rounded-full bg-accent text-primary">
@@ -167,7 +168,7 @@ export default function CleanerPage() {
 
           {pickerOpen && (
             <ul className="border-t border-border">
-              {services.map((s) => (
+              {checklist.map((s) => (
                 <li key={s.id} className="border-b border-border last:border-b-0">
                   <button
                     type="button"
@@ -269,7 +270,7 @@ export default function CleanerPage() {
                       {item.photo ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={item.photo || '/placeholder.svg'}
+                          src={item.photo?.src || '/placeholder.svg'}
                           alt="Фото услуги"
                           className="size-11 rounded-lg object-cover"
                         />
@@ -318,7 +319,7 @@ export default function CleanerPage() {
           <Button
             size="lg"
             disabled={includedCount === 0}
-            onClick={() => setFinished(true)}
+            onClick={() => setStatus('completed')}
             className="h-14 w-full rounded-2xl text-base"
           >
             Завершить уборку

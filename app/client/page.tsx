@@ -12,19 +12,21 @@ import {
   cleaning,
   clientRules,
   countProgress,
-  initialServices,
+  getInitialChecklist,
   moveOptions,
   photos,
-  type Service,
+  type ChecklistItem,
 } from '@/lib/mock-data'
+import type { CleaningStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export default function ClientPage() {
-  const [completed, setCompleted] = useState(false)
+  const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [viewer, setViewer] = useState<{ src: string; alt: string } | null>(null)
+  const completed = status === 'completed'
 
-  const active: Service[] = useMemo(() => {
-    const included = initialServices.filter((s) => s.included)
+  const active: ChecklistItem[] = useMemo(() => {
+    const included = getInitialChecklist().filter((s) => s.included)
     return completed ? included.map((s) => ({ ...s, done: true })) : included
   }, [completed])
 
@@ -47,7 +49,7 @@ export default function ClientPage() {
         <div className="flex rounded-full bg-secondary p-1 text-sm">
           <button
             type="button"
-            onClick={() => setCompleted(false)}
+            onClick={() => setStatus('in_progress')}
             className={cn(
               'flex-1 rounded-full py-2 font-medium transition-colors',
               !completed ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
@@ -57,7 +59,7 @@ export default function ClientPage() {
           </button>
           <button
             type="button"
-            onClick={() => setCompleted(true)}
+            onClick={() => setStatus('completed')}
             className={cn(
               'flex-1 rounded-full py-2 font-medium transition-colors',
               completed ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
@@ -88,7 +90,7 @@ export default function ClientPage() {
           <dl className="mt-5 flex justify-center gap-6 border-t border-border pt-4 text-sm">
             <div className="flex items-center gap-2">
               <MapPin className="size-4 text-muted-foreground" />
-              <span className="font-medium">ул. Ленина, 15</span>
+              <span className="font-medium">{cleaning.address}</span>
             </div>
             <div className="flex items-center gap-2">
               <Clock className="size-4 text-muted-foreground" />
