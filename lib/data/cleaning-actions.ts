@@ -190,19 +190,28 @@ export async function getOrCreateClientLink(cleaningId: string): Promise<ClientL
   }
 }
 
-/** Without a database, the existing UI keeps changes in local state. */
-export async function updateChecklistItem(itemId: string, isDone: boolean): Promise<WriteResult> {
+/** Without a database, the existing demo UI keeps changes in local state. */
+export async function updateChecklistItem(
+  cleaningId: string,
+  itemId: string,
+  isDone: boolean,
+): Promise<WriteResult> {
   try {
     const pool = getPostgresPool()
-    if (!pool) return { ok: true }
-    if (typeof itemId !== 'string' || typeof isDone !== 'boolean') return { ok: false }
+    if (!pool) return { ok: cleaningId === DEMO_CLEANING_ID }
+    if (
+      typeof cleaningId !== 'string'
+      || !UUID_PATTERN.test(cleaningId)
+      || typeof itemId !== 'string'
+      || !UUID_PATTERN.test(itemId)
+      || typeof isDone !== 'boolean'
+    ) return { ok: false }
 
     return await withTransaction(pool, async (client) => {
       // Both writes lock the parent first to serialize completion and checkbox updates.
-      // Retain the former demo-only write scope until authentication is introduced.
       const cleaning = await client.query(
         'SELECT id FROM cleanings WHERE id = $1 FOR UPDATE',
-        [DEMO_CLEANING_ID],
+        [cleaningId],
       )
       if (cleaning.rowCount !== 1) return { ok: false }
 
@@ -210,7 +219,7 @@ export async function updateChecklistItem(itemId: string, isDone: boolean): Prom
         `UPDATE cleaning_services
          SET is_done = $2, completed_at = CASE WHEN $2 THEN now() ELSE NULL END
          WHERE id = $1 AND cleaning_id = $3`,
-        [itemId, isDone, DEMO_CLEANING_ID],
+        [itemId, isDone, cleaningId],
       )
       return { ok: result.rowCount === 1 }
     })
@@ -222,8 +231,12 @@ export async function updateChecklistItem(itemId: string, isDone: boolean): Prom
 export async function completeCleaning(cleaningId: string): Promise<CompleteCleaningResult> {
   try {
     const pool = getPostgresPool()
-    if (!pool) return { ok: true, completedAt: new Date().toISOString() }
-    if (cleaningId !== DEMO_CLEANING_ID) return { ok: false }
+    if (!pool) {
+      return cleaningId === DEMO_CLEANING_ID
+        ? { ok: true, completedAt: new Date().toISOString() }
+        : { ok: false }
+    }
+    if (typeof cleaningId !== 'string' || !UUID_PATTERN.test(cleaningId)) return { ok: false }
 
     return await withTransaction(pool, async (client) => {
       const cleaningResult = await client.query<{

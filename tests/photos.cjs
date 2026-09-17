@@ -29,13 +29,25 @@ const { getCleaningData } = require('../lib/data/cleanings.ts')
 const id = process.env.DEMO_CLEANING_ID
 const pool = getPostgresPool()
 const created = []
-const upload = (body, type, query = '', headers = {}) => POST(new Request(`http://localhost/api/photos${query}`, {
+const upload = (body, type, query = '', headers = {}, cleaningId = id) => {
+  const suffix = query ? `&${query.slice(1)}` : ''
+  return POST(new Request(`http://localhost/api/photos?cleaning_id=${cleaningId}${suffix}`, {
   method: 'POST', headers: { 'content-type': type, ...headers }, body,
-}))
+  }))
+}
 const read = photoId => GET(new Request('http://localhost'), { params: Promise.resolve({ id: photoId }) })
 async function main() {
   try {
     const service = (await pool.query('SELECT id FROM cleaning_services WHERE cleaning_id = $1 LIMIT 1', [id])).rows[0].id
+    const otherCleaning = (await pool.query(
+      `INSERT INTO cleanings (number, client_name, address, started_at, status)
+       VALUES ('photo-test', 'Фото-тест', 'Тестовый адрес', now(), 'in_progress') RETURNING id`,
+    )).rows[0].id
+    const otherService = (await pool.query(
+      `INSERT INTO cleaning_services (cleaning_id, service_id, is_selected, is_done)
+       SELECT $1, service_id, true, false FROM cleaning_services WHERE id = $2 RETURNING id`,
+      [otherCleaning, service],
+    )).rows[0].id
     const source = { create: { width: 3000, height: 1500, channels: 3, background: '#447799' } }
     const jpeg = await sharp(source).jpeg().toBuffer()
     const heic = fs.readFileSync(path.join(__dirname, 'fixtures/mobile.heic'))
@@ -53,6 +65,7 @@ async function main() {
       assert.equal(response.status, 201)
       const photo = await response.json()
       created.push(photo.id)
+      assert.equal((await pool.query('SELECT cleaning_id FROM photos WHERE id = $1', [photo.id])).rows[0].cleaning_id, id)
       assert.equal(photo.cleaningServiceId, type === 'image/png' ? service : null)
       const stored = (await pool.query('SELECT storage_path FROM photos WHERE id = $1', [photo.id])).rows[0].storage_path
       assert.match(stored, /^[a-f0-9-]+\.jpg$/)
@@ -69,6 +82,18 @@ async function main() {
       for (let reload = 0; reload < 2; reload++) assert.ok((await getCleaningData(id)).photos.some(p => p.id === photo.id))
       if (type === 'image/png') assert.equal((await getCleaningData(id)).checklist.find(i => i.id === service).photo.id, photo.id)
     }
+    assert.equal((await POST(new Request('http://localhost/api/photos', { method: 'POST', body: jpeg }))).status, 400)
+    const otherPhotoResponse = await upload(jpeg, 'image/jpeg', '', {}, otherCleaning)
+    assert.equal(otherPhotoResponse.status, 201)
+    const otherPhoto = await otherPhotoResponse.json()
+    created.push(otherPhoto.id)
+    assert.equal((await pool.query('SELECT cleaning_id FROM photos WHERE id = $1', [otherPhoto.id])).rows[0].cleaning_id, otherCleaning)
+    const otherServicePhotoResponse = await upload(jpeg, 'image/jpeg', `?cleaning_service_id=${otherService}`, {}, otherCleaning)
+    assert.equal(otherServicePhotoResponse.status, 201)
+    const otherServicePhoto = await otherServicePhotoResponse.json()
+    created.push(otherServicePhoto.id)
+    assert.equal(otherServicePhoto.cleaningServiceId, otherService)
+    assert.equal((await upload(jpeg, 'image/jpeg', `?cleaning_service_id=${service}`, {}, otherCleaning)).status, 400)
     for (const type of ['image/heic', 'image/heif']) {
       assert.equal((await upload('bad', type)).status, 415)
       assert.equal((await upload(Buffer.alloc(50 * 1024 * 1024 + 1), type)).status, 413)
@@ -139,6 +164,7 @@ async function main() {
     console.log('PASS: JPEG/PNG/WebP/HEIC/HEIF/AVIF, normalization, EXIF rotation, legacy reads, metadata, service binding, reload reads, MIME-independent detection, size/invalid-image rejection, traversal/symlink/missing-file protection, mock fallback')
   } finally {
     await pool.query('DELETE FROM photos WHERE id = ANY($1::uuid[])', [created])
+    await pool.query("DELETE FROM cleanings WHERE number = 'photo-test'")
     await pool.end()
     fs.rmSync(directory, { recursive: true, force: true })
   }

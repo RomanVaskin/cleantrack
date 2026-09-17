@@ -156,6 +156,20 @@ async function main() {
     assert.equal(createdData.cleaning.client, 'Новый клиент')
     assert.equal(createdData.cleaning.clientToken, null)
     assert.equal(createdData.checklist.length, 2)
+    const createdItemId = createdData.checklist[0].id
+    const demoItemId = data.checklist.find(i => !i.done && i.included).id
+    assert.deepEqual(await updateChecklistItem(created.cleaningId, createdItemId, true), { ok: true })
+    assert.equal((await pool.query('SELECT is_done FROM cleaning_services WHERE id = $1', [createdItemId])).rows[0].is_done, true)
+    assert.deepEqual(await updateChecklistItem(id, createdItemId, false), { ok: false })
+    assert.equal((await pool.query('SELECT is_done FROM cleaning_services WHERE id = $1', [createdItemId])).rows[0].is_done, true)
+    assert.deepEqual(await completeCleaning(created.cleaningId), { ok: false })
+    const createdOtherItemId = createdData.checklist[1].id
+    assert.deepEqual(await updateChecklistItem(created.cleaningId, createdOtherItemId, true), { ok: true })
+    const createdCompletion = await completeCleaning(created.cleaningId)
+    assert.equal(createdCompletion.ok, true)
+    assert.ok(createdCompletion.completedAt)
+    assert.deepEqual(await completeCleaning(created.cleaningId), createdCompletion)
+    assert.equal((await pool.query('SELECT status FROM cleanings WHERE id = $1', [created.cleaningId])).rows[0].status, 'completed')
 
     assert.equal(await getCleaningDataByClientToken('unknown-token'), null)
     assert.deepEqual(await getOrCreateClientLink('99999999-9999-9999-9999-999999999999'), { ok: false })
@@ -206,21 +220,21 @@ async function main() {
     assert.equal(updatedLinkedData.cleaning.clientPhone, '+7 999 123-45-67')
     assert.equal(updatedLinkedData.cleaning.address, 'Москва, Тверская улица, 1')
     assert.deepEqual(await getOrCreateClientLink(id), clientLink)
-    const itemId = data.checklist.find(i => !i.done && i.included).id
+    const itemId = demoItemId
     assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.equal((await getCleaningData(id)).cleaning.status, 'in_progress')
-    assert.deepEqual(await updateChecklistItem(itemId, true), { ok: true })
+    assert.deepEqual(await updateChecklistItem(id, itemId, true), { ok: true })
     let row = (await pool.query('SELECT * FROM cleaning_services WHERE id = $1', [itemId])).rows[0]
     assert.equal(row.is_done, true)
     assert.ok(row.completed_at instanceof Date)
-    assert.deepEqual(await updateChecklistItem(itemId, false), { ok: true })
+    assert.deepEqual(await updateChecklistItem(id, itemId, false), { ok: true })
     row = (await pool.query('SELECT * FROM cleaning_services WHERE id = $1', [itemId])).rows[0]
     assert.equal(row.is_done, false)
     assert.equal(row.completed_at, null)
-    assert.deepEqual(await updateChecklistItem('invalid uuid', true), { ok: false })
-    assert.deepEqual(await updateChecklistItem(itemId, 'false'), { ok: false })
-    assert.deepEqual(await updateChecklistItem('99999999-9999-9999-9999-999999999999', true), { ok: false })
+    assert.deepEqual(await updateChecklistItem('invalid uuid', itemId, true), { ok: false })
+    assert.deepEqual(await updateChecklistItem(id, itemId, 'false'), { ok: false })
+    assert.deepEqual(await updateChecklistItem(id, '99999999-9999-9999-9999-999999999999', true), { ok: false })
     assert.deepEqual(await completeCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 
     await assert.rejects(withTransaction(pool, async client => {
@@ -230,7 +244,7 @@ async function main() {
     assert.equal((await getCleaningData(id)).cleaning.number, '124')
 
     for (const item of data.checklist.filter(i => i.included)) {
-      assert.deepEqual(await updateChecklistItem(item.id, true), { ok: true })
+      assert.deepEqual(await updateChecklistItem(id, item.id, true), { ok: true })
     }
     // Hold the same parent lock as the write action and uncheck an item.
     // Completion must see the committed change after waiting for that lock.
@@ -243,7 +257,7 @@ async function main() {
       await client.query('COMMIT')
       assert.deepEqual(await completion, { ok: false })
     } finally { client.release() }
-    assert.deepEqual(await updateChecklistItem(itemId, true), { ok: true })
+    assert.deepEqual(await updateChecklistItem(id, itemId, true), { ok: true })
     const completion = await completeCleaning(id)
     assert.equal(completion.ok, true)
     assert.ok(completion.completedAt)
@@ -272,6 +286,7 @@ async function main() {
     assert.equal(acceptedRow.status, 'accepted')
     assert.equal(acceptedRow.completed_at.toISOString(), completedAtBeforeAcceptance)
     assert.equal(acceptedRow.accepted_at.toISOString(), acceptance.acceptedAt)
+    assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.equal((await pool.query('SELECT count(*)::int n FROM cleaning_services WHERE NOT is_selected AND NOT is_done')).rows[0].n, 4)
 
     process.env.DATABASE_URL = ''
@@ -288,7 +303,7 @@ async function main() {
       acceptedAt: mock.cleaning.acceptedAt,
       progress: { done: 3, total: 8, percent: 38 },
     })
-    assert.deepEqual(await updateChecklistItem('s4', true), { ok: true })
+    assert.deepEqual(await updateChecklistItem(id, 's4', true), { ok: true })
     const mockCompletion = await completeCleaning(id)
     assert.equal(mockCompletion.ok, true)
     assert.ok(mockCompletion.completedAt)
@@ -306,7 +321,7 @@ async function main() {
 
     process.env.DATABASE_URL = url
     await pool.end()
-    assert.deepEqual(await updateChecklistItem(itemId, true), { ok: false })
+    assert.deepEqual(await updateChecklistItem(id, itemId, true), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual(await updateCleaningClient(id, {

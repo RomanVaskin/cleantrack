@@ -1,5 +1,4 @@
-import { PhotoInputError } from '@/lib/server/photo-storage'
-import { DEMO_CLEANING_ID } from '@/lib/data/cleanings'
+import { PhotoInputError, UUID_PATTERN } from '@/lib/server/photo-storage'
 import { uploadCleaningPhoto } from '@/lib/data/photos'
 import { photoUploadError, MAX_PHOTO_BYTES } from '@/lib/photo-upload'
 
@@ -26,6 +25,12 @@ export async function POST(request: Request) {
     console.error('[photo-upload]', { status, reason })
     return Response.json({ error: photoUploadError(status) }, { status })
   }
+  const params = new URL(request.url).searchParams
+  const cleaningId = params.get('cleaning_id')
+  const serviceId = params.get('cleaning_service_id')
+  if (!cleaningId || !UUID_PATTERN.test(cleaningId) || (serviceId !== null && !UUID_PATTERN.test(serviceId))) {
+    return fail(400, 'Invalid target')
+  }
   if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 50 MiB')
   if (!request.body) return fail(400, 'Missing request body')
   try {
@@ -47,8 +52,7 @@ export async function POST(request: Request) {
     } finally {
       reader.releaseLock()
     }
-    const serviceId = new URL(request.url).searchParams.get('cleaning_service_id')
-    const photo = await uploadCleaningPhoto(DEMO_CLEANING_ID, serviceId, Buffer.concat(chunks))
+    const photo = await uploadCleaningPhoto(cleaningId, serviceId, Buffer.concat(chunks))
     return Response.json(photo, { status: 201 })
   } catch (error) {
     if (error instanceof PhotoInputError) return fail(error.status, error.message)

@@ -97,7 +97,7 @@ export function CleanerView({
     setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: nextDone } : s)))
     setSaveError(false)
 
-    const result = await updateChecklistItem(id, nextDone)
+    const result = await updateChecklistItem(cleaning.id, id, nextDone)
     if (!result.ok) {
       setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: current.done } : s)))
       setSaveError(true)
@@ -130,7 +130,7 @@ export function CleanerView({
     setUploading(true)
     setPhotoError(null)
     try {
-      const photo = await uploadCleaningPhoto(file, serviceId)
+      const photo = await uploadCleaningPhoto(file, cleaning.id, serviceId)
       setPhotos((previous) => [...previous, photo])
       if (serviceId) {
         setChecklist((previous) => previous.map((item) => item.id === serviceId ? { ...item, photo } : item))

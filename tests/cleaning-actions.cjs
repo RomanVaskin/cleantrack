@@ -30,7 +30,7 @@ require.extensions['.ts'] = (mod, filename) => {
   }).outputText, filename)
 }
 
-const { createCleaning } = require('../lib/data/cleaning-actions.ts')
+const { createCleaning, updateChecklistItem, completeCleaning } = require('../lib/data/cleaning-actions.ts')
 
 const baseInput = {
   clientName: 'Новый клиент',
@@ -52,6 +52,15 @@ async function main() {
     selectedServiceIds: ['not-a-uuid'],
   }), { ok: false, error: 'validation', field: 'serviceId' })
   assert.equal(getPostgresPoolCalls, 0)
+
+  assert.deepEqual(await updateChecklistItem(
+    '11111111-1111-1111-1111-111111111111', 's4', true,
+  ), { ok: true })
+  assert.deepEqual(await updateChecklistItem(
+    '99999999-9999-9999-9999-999999999999', 's4', true,
+  ), { ok: false })
+  assert.equal((await completeCleaning('11111111-1111-1111-1111-111111111111')).ok, true)
+  assert.deepEqual(await completeCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 }
 
 main().catch((error) => {
