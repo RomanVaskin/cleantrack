@@ -68,5 +68,11 @@ function CleaningCard({ cleaning }: { cleaning: CleanerCleaning }) {
 
 function StatusBadge({ status }: { status: CleanerCleaning['status'] }) {
   const label = status === 'accepted' ? 'Принята' : status === 'completed' ? 'Завершена' : 'В процессе'
-  return <span className="shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">{label}</span>
+  return (
+    <span className={status === 'accepted'
+      ? 'shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+      : 'shrink-0 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground'}>
+      {label}
+    </span>
+  )
 }

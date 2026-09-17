@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import {
   Camera,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   Clock,
@@ -180,44 +179,18 @@ export function CleanerView({
 
   if (status !== 'in_progress') {
     return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-6 text-center">
-        <span className="flex size-20 items-center justify-center rounded-full bg-accent text-primary">
-          <CheckCircle2 className="size-10" />
-        </span>
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-          {status === 'accepted' ? 'Работа принята' : 'Уборка завершена'}
-        </h1>
-        <p className="mt-2 text-lg text-muted-foreground">
-          {done} из {total} услуг выполнено
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">Уборка №{cleaning.number}</p>
-        {completedAt && (
-          <p className="mt-4 text-sm text-muted-foreground">
-            Уборка завершена: {formatCleaningDateTime(completedAt)}
-          </p>
-        )}
-        {status === 'accepted' && cleaning.acceptedAt && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            Работа принята: {formatCleaningDateTime(cleaning.acceptedAt)}
-          </p>
-        )}
-        <ClientLinkBlock
-          cleaningId={cleaning.id}
-          token={clientToken}
-          onToken={setClientToken}
-          canCreate={hasClientDetails}
-          className="mt-6 w-full"
-        />
-        <DeleteCleaningAction cleaningId={cleaning.id} cleaningNumber={cleaning.number} />
-        <Link href="/cleaner/jobs" className="mt-10 w-full">
-          <Button size="lg" className="h-14 w-full rounded-2xl text-base">
-            К списку уборок
-          </Button>
-        </Link>
-        <Link href="/client" className="mt-3 text-sm text-muted-foreground underline">
-          Открыть как видит клиент
-        </Link>
-      </main>
+      <CompletedCleaningView
+        cleaning={cleaning}
+        checklist={checklist}
+        clientRules={clientRules}
+        photos={photos}
+        status={status}
+        completedAt={completedAt}
+        clientToken={clientToken}
+        clientDetails={clientDetails}
+        hasClientDetails={hasClientDetails}
+        onToken={setClientToken}
+      />
     )
   }
 
@@ -562,6 +535,158 @@ export function CleanerView({
   )
 }
 
+function CompletedCleaningView({
+  cleaning,
+  checklist,
+  clientRules,
+  photos,
+  status,
+  completedAt,
+  clientToken,
+  clientDetails,
+  hasClientDetails,
+  onToken,
+}: {
+  cleaning: Cleaning
+  checklist: ChecklistItem[]
+  clientRules: ClientRules
+  photos: Photo[]
+  status: Exclude<CleaningStatus, 'in_progress'>
+  completedAt: string | null
+  clientToken: string | null
+  clientDetails: { clientName: string; clientPhone: string; address: string }
+  hasClientDetails: boolean
+  onToken: (token: string) => void
+}) {
+  const [viewer, setViewer] = useState<Photo | null>(null)
+  const active = checklist.filter((item) => item.included)
+  const { done, total, percent } = countProgress(checklist)
+  const accepted = status === 'accepted'
+
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
+      <header className="sticky top-0 z-20 border-b border-border bg-background/90 px-5 py-3 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <Link href="/cleaner/jobs" aria-label="Назад" className="-ml-2 flex size-9 items-center justify-center rounded-full text-muted-foreground">
+            <ChevronLeft className="size-6" />
+          </Link>
+          <Logo />
+          <span className="size-9" />
+        </div>
+      </header>
+
+      <main className="flex-1 px-5 pb-10 pt-4">
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">Уборка №{cleaning.number}</h1>
+            <span className={cn(
+              'shrink-0 rounded-full px-3 py-1 text-xs font-medium',
+              accepted ? 'bg-primary text-primary-foreground' : 'bg-accent text-accent-foreground',
+            )}>
+              {accepted ? 'Принята клиентом' : 'Завершена'}
+            </span>
+          </div>
+          <dl className="mt-4 space-y-2.5 text-sm">
+            <InfoRow icon={<User className="size-4" />} label="Клиент" value={clientDetails.clientName || 'Не указан'} />
+            <InfoRow icon={<MapPin className="size-4" />} label="Адрес" value={clientDetails.address || 'Не указан'} />
+            {clientDetails.clientPhone && <InfoRow icon={<Phone className="size-4" />} label="Телефон" value={clientDetails.clientPhone} />}
+            <InfoRow icon={<Check className="size-4" />} label="Прогресс" value={`${done} из ${total} услуг выполнено`} />
+            <InfoRow icon={<Camera className="size-4" />} label="Фото" value={`${photos.length} фото`} />
+          </dl>
+          <dl className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
+            <HistoryRow label="Начало" value={cleaning.startedAt} />
+            <HistoryRow label="Завершено" value={completedAt} />
+            {accepted && <HistoryRow label="Принято клиентом" value={cleaning.acceptedAt} />}
+          </dl>
+        </section>
+
+        <Link href="/cleaner/jobs" className="mt-4 block">
+          <Button type="button" variant="outline" className="w-full rounded-xl">
+            К списку уборок
+          </Button>
+        </Link>
+
+        <ClientLinkBlock
+          cleaningId={cleaning.id}
+          token={clientToken}
+          onToken={onToken}
+          canCreate={hasClientDetails}
+          showWhenMissing={!accepted}
+          className="mt-4"
+        />
+
+        <section className="mt-4 rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2">
+            <Lock className="size-4 text-primary" />
+            <h2 className="text-base font-semibold tracking-tight">Правила клиента</h2>
+          </div>
+          <div className="mt-4 space-y-4 text-sm">
+            <RuleRow question="Открывать шкафы, гардеробные и тумбочки?" answer={cabinetOptions[clientRules.cabinets]} />
+            <RuleRow question="Перемещать личные вещи?" answer={moveOptions[clientRules.moveItems]} />
+          </div>
+          <div className="mt-4 space-y-3">
+            <RuleText label="Категорически не трогать" value={clientRules.doNotTouch} destructive />
+            <RuleText label="Особые пожелания" value={clientRules.wishes} />
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Чек-лист уборки</h2>
+          <p className="mt-1 px-1 text-sm text-muted-foreground">Выполнено: {done} из {total} ({percent}%)</p>
+          {active.length === 0 ? (
+            <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Услуги не выбраны</p>
+          ) : (
+            <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
+              {active.map((item, index) => (
+                <li key={item.id} className={cn('px-4 py-3', index > 0 && 'border-t border-border')}>
+                  <div className="flex items-start gap-3">
+                    <span className={cn('mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full', item.done ? 'bg-primary text-primary-foreground' : 'border-2 border-border text-muted-foreground')}>
+                      {item.done && <Check className="size-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[15px] leading-snug">{item.label}</p>
+                      <p className={cn('mt-1 text-xs font-medium', item.done ? 'text-primary' : 'text-muted-foreground')}>
+                        {item.done ? 'Выполнено' : 'Не выполнено'}
+                      </p>
+                      {item.note && <p className="mt-2 rounded-xl bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">{item.note}</p>}
+                    </div>
+                    {item.photo && (
+                      <button type="button" onClick={() => setViewer(item.photo)} className="size-11 shrink-0 overflow-hidden rounded-lg border border-border" aria-label={`Открыть фото услуги ${item.label}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.photo.src || '/placeholder.svg'} alt="Фото услуги" className="size-full object-cover" />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="mt-6">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Фото уборки</h2>
+          {photos.length === 0 ? (
+            <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Фотографий нет</p>
+          ) : (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {photos.map((photo) => (
+                <button key={photo.id ?? photo.src} type="button" onClick={() => setViewer(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.src || '/placeholder.svg'} alt={photo.alt} className="size-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <DeleteCleaningAction cleaningId={cleaning.id} cleaningNumber={cleaning.number} />
+      </main>
+
+      {viewer && <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />}
+    </div>
+  )
+}
+
 function DeleteCleaningAction({ cleaningId, cleaningNumber }: { cleaningId: string; cleaningNumber: string }) {
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
@@ -608,12 +733,14 @@ function ClientLinkBlock({
   token,
   onToken,
   canCreate,
+  showWhenMissing = true,
   className,
 }: {
   cleaningId: string
   token: string | null
   onToken: (token: string) => void
   canCreate: boolean
+  showWhenMissing?: boolean
   className?: string
 }) {
   const [creating, setCreating] = useState(false)
@@ -649,6 +776,8 @@ function ClientLinkBlock({
     }
     setCopied(true)
   }
+
+  if (!token && !showWhenMissing) return null
 
   return (
     <section className={cn('rounded-2xl border border-border bg-card p-5 text-left', className)}>
@@ -743,6 +872,34 @@ function RuleRow({ question, answer }: { question: string; answer: string }) {
         <Check className="size-4 text-primary" />
         {answer}
       </p>
+    </div>
+  )
+}
+
+function RuleText({
+  label,
+  value,
+  destructive = false,
+}: {
+  label: string
+  value: string
+  destructive?: boolean
+}) {
+  return (
+    <div className={cn('rounded-xl border p-3', destructive ? 'border-destructive/30 bg-destructive/5' : 'border-border bg-secondary/60')}>
+      <p className={cn('text-xs font-semibold uppercase tracking-wide', destructive ? 'text-destructive' : 'text-muted-foreground')}>
+        {label}
+      </p>
+      <p className="mt-1 text-sm text-foreground">{value || 'Не указано'}</p>
+    </div>
+  )
+}
+
+function HistoryRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium">{value ? formatCleaningDateTime(value) : '—'}</dd>
     </div>
   )
 }
