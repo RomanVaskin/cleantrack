@@ -1,5 +1,6 @@
 -- CleanTrack — минимальная схема для одной уборки.
--- Только чтение с фронтенда (anon key): без Auth, без записи с клиента.
+-- Чтение с фронтенда открыто всем строкам (anon key, без Auth).
+-- Запись (UPDATE) разрешена anon только для demo-уборки — см. политики ниже.
 
 create extension if not exists pgcrypto;
 
@@ -61,6 +62,21 @@ create policy "Public read access" on services for select using (true);
 create policy "Public read access" on cleaning_services for select using (true);
 create policy "Public read access" on client_rules for select using (true);
 create policy "Public read access" on photos for select using (true);
+
+-- Write (UPDATE only, no INSERT/DELETE): без Auth нет сессии, к которой
+-- можно привязать политику, поэтому ограничиваем запись фиксированным
+-- id demo-уборки — тем же, что в seed.sql и DEMO_CLEANING_ID. WITH CHECK
+-- повторяет USING, чтобы UPDATE не мог увести строку из scope или завести
+-- в него чужую.
+create policy "Update demo cleaning only" on cleanings
+  for update
+  using (id = '11111111-1111-1111-1111-111111111111')
+  with check (id = '11111111-1111-1111-1111-111111111111');
+
+create policy "Update demo cleaning services only" on cleaning_services
+  for update
+  using (cleaning_id = '11111111-1111-1111-1111-111111111111')
+  with check (cleaning_id = '11111111-1111-1111-1111-111111111111');
 
 -- Storage: публичный бакет для фото уборки. Файлы сюда на этом этапе
 -- не загружаются — это только подготовка бакета под будущий upload.

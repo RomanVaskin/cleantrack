@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Camera,
@@ -18,6 +18,7 @@ import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
+import { completeCleaning, updateChecklistItem } from '@/lib/data/cleaning-actions'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -39,10 +40,17 @@ export function CleanerView({
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState(false)
 
   const { total, done, percent } = useMemo(() => countProgress(checklist), [checklist])
   const active = useMemo(() => checklist.filter((s) => s.included), [checklist])
   const includedCount = active.length
+
+  useEffect(() => {
+    if (!saveError) return
+    const timer = setTimeout(() => setSaveError(false), 4000)
+    return () => clearTimeout(timer)
+  }, [saveError])
 
   function toggleIncluded(id: string) {
     setChecklist((prev) =>
@@ -52,8 +60,31 @@ export function CleanerView({
     )
   }
 
-  function toggleDone(id: string) {
-    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: !s.done } : s)))
+  async function toggleDone(id: string) {
+    const current = checklist.find((s) => s.id === id)
+    if (!current) return
+    const nextDone = !current.done
+
+    setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: nextDone } : s)))
+    setSaveError(false)
+
+    const result = await updateChecklistItem(id, nextDone)
+    if (!result.ok) {
+      setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, done: current.done } : s)))
+      setSaveError(true)
+    }
+  }
+
+  async function finishCleaning() {
+    const previousStatus = status
+    setStatus('completed')
+    setSaveError(false)
+
+    const result = await completeCleaning(cleaning.id)
+    if (!result.ok) {
+      setStatus(previousStatus)
+      setSaveError(true)
+    }
   }
 
   function attachPhoto(id: string, index: number) {
@@ -320,10 +351,13 @@ export function CleanerView({
       {/* Sticky actions */}
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md">
         <div className="border-t border-border bg-background/95 px-5 pb-2 pt-3 backdrop-blur">
+          {saveError && (
+            <p className="mb-2 text-center text-xs text-destructive">Не удалось сохранить изменение</p>
+          )}
           <Button
             size="lg"
-            disabled={includedCount === 0}
-            onClick={() => setStatus('completed')}
+            disabled={includedCount === 0 || done < total}
+            onClick={finishCleaning}
             className="h-14 w-full rounded-2xl text-base"
           >
             Завершить уборку
