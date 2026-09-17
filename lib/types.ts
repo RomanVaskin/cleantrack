@@ -9,6 +9,7 @@ export interface Cleaning {
   number: string
   address: string
   client: string
+  clientPhone: string | null
   startedAt: string
   status: CleaningStatus
   completedAt: string | null

@@ -38,6 +38,7 @@ const {
   completeCleaning,
   acceptCleaning,
   getOrCreateClientLink,
+  updateCleaningClient,
 } = require('../lib/data/cleaning-actions.ts')
 const mock = require('../lib/mock-data.ts')
 
@@ -50,6 +51,7 @@ async function main() {
       '001_add_cleaning_acceptance.sql',
       '002_add_cleaning_completion.sql',
       '003_add_client_token.sql',
+      '004_add_client_phone.sql',
     ]) {
       const migration = fs.readFileSync(path.join(__dirname, '../db/migrations', name), 'utf8')
       await pool.query(migration)
@@ -85,6 +87,41 @@ async function main() {
     const linkedData = await getCleaningDataByClientToken(clientLink.token)
     assert.equal(linkedData.cleaning.id, id)
     assert.equal(linkedData.cleaning.clientToken, clientLink.token)
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: ' ',
+      clientPhone: '',
+      address: 'Новый адрес',
+    }), { ok: false })
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: 'Клиент',
+      clientPhone: '1'.repeat(41),
+      address: 'Новый адрес',
+    }), { ok: false })
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: 'Клиент',
+      clientPhone: '',
+      address: 'а'.repeat(301),
+    }), { ok: false })
+    assert.deepEqual(await updateCleaningClient('99999999-9999-9999-9999-999999999999', {
+      clientName: 'Клиент',
+      clientPhone: '',
+      address: 'Новый адрес',
+    }), { ok: false })
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: '  Мария  ',
+      clientPhone: '  +7 999 123-45-67  ',
+      address: '  Москва, Тверская улица, 1  ',
+    }), { ok: true })
+    const updatedCleaning = (await getCleaningData(id)).cleaning
+    assert.equal(updatedCleaning.client, 'Мария')
+    assert.equal(updatedCleaning.clientPhone, '+7 999 123-45-67')
+    assert.equal(updatedCleaning.address, 'Москва, Тверская улица, 1')
+    assert.equal(updatedCleaning.clientToken, clientLink.token)
+    const updatedLinkedData = await getCleaningDataByClientToken(clientLink.token)
+    assert.equal(updatedLinkedData.cleaning.client, 'Мария')
+    assert.equal(updatedLinkedData.cleaning.clientPhone, '+7 999 123-45-67')
+    assert.equal(updatedLinkedData.cleaning.address, 'Москва, Тверская улица, 1')
+    assert.deepEqual(await getOrCreateClientLink(id), clientLink)
     const itemId = data.checklist.find(i => !i.done && i.included).id
     assert.deepEqual(await acceptCleaning(id), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
@@ -165,6 +202,10 @@ async function main() {
     assert.match(mockLink.token, /^[A-Za-z0-9_-]{32}$/)
     assert.deepEqual(await getOrCreateClientLink(id), mockLink)
     assert.equal(await getCleaningDataByClientToken(mockLink.token), null)
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: 'Мария',
+      address: 'Москва',
+    }), { ok: true })
     assert.equal((await acceptCleaning(id)).ok, true)
     assert.deepEqual(await acceptCleaning('99999999-9999-9999-9999-999999999999'), { ok: false })
 
@@ -173,8 +214,12 @@ async function main() {
     assert.deepEqual(await updateChecklistItem(itemId, true), { ok: false })
     assert.deepEqual(await completeCleaning(id), { ok: false })
     assert.deepEqual(await acceptCleaning(id), { ok: false })
+    assert.deepEqual(await updateCleaningClient(id, {
+      clientName: 'Мария',
+      address: 'Москва',
+    }), { ok: false })
     assert.deepEqual((await getCleaningData(id)).cleaning, mock.cleaning)
-    console.log('PASS: seed, reads, share tokens, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
+    console.log('PASS: seed, client details, share tokens, timestamps, completion and acceptance guards, locking, mock fallback and DB failures')
   } finally {
     if (!pool.ended) await pool.end()
   }

@@ -14,6 +14,7 @@ import {
   Lock,
   MapPin,
   Pencil,
+  Phone,
   User,
 } from 'lucide-react'
 import { uploadCleaningPhoto } from '@/lib/photo-upload'
@@ -25,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import {
   completeCleaning,
   getOrCreateClientLink,
+  updateCleaningClient,
   updateChecklistItem,
 } from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
@@ -56,6 +58,15 @@ export function CleanerView({
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [completedAt, setCompletedAt] = useState(cleaning.completedAt)
   const [clientToken, setClientToken] = useState(cleaning.clientToken)
+  const [clientDetails, setClientDetails] = useState({
+    clientName: cleaning.client,
+    clientPhone: cleaning.clientPhone ?? '',
+    address: cleaning.address,
+  })
+  const [clientDraft, setClientDraft] = useState(clientDetails)
+  const [editingClient, setEditingClient] = useState(false)
+  const [savingClient, setSavingClient] = useState(false)
+  const [clientSaveError, setClientSaveError] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState<string | null>(null)
   const [saveError, setSaveError] = useState(false)
@@ -136,6 +147,34 @@ export function CleanerView({
     setChecklist((prev) => prev.map((s) => (s.id === id ? { ...s, note: value } : s)))
   }
 
+  async function saveClientDetails(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const nextDetails = {
+      clientName: clientDraft.clientName.trim(),
+      clientPhone: clientDraft.clientPhone.trim(),
+      address: clientDraft.address.trim(),
+    }
+    setSavingClient(true)
+    setClientSaveError(false)
+    const result = await updateCleaningClient(cleaning.id, nextDetails)
+    setSavingClient(false)
+    if (!result.ok) {
+      setClientSaveError(true)
+      return
+    }
+    setClientDetails(nextDetails)
+    setClientDraft(nextDetails)
+    setEditingClient(false)
+  }
+
+  function startEditingClient() {
+    setClientDraft(clientDetails)
+    setClientSaveError(false)
+    setEditingClient(true)
+  }
+
+  const hasClientDetails = Boolean(clientDetails.clientName.trim() && clientDetails.address.trim())
+
   if (status !== 'in_progress') {
     return (
       <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-6 text-center">
@@ -163,6 +202,7 @@ export function CleanerView({
           cleaningId={cleaning.id}
           token={clientToken}
           onToken={setClientToken}
+          canCreate={hasClientDetails}
           className="mt-6 w-full"
         />
         <Link href="/" className="mt-10 w-full">
@@ -199,16 +239,76 @@ export function CleanerView({
             </span>
           </div>
           <dl className="mt-4 space-y-2.5 text-sm">
-            <InfoRow icon={<MapPin className="size-4" />} label="Адрес" value={cleaning.address} />
-            <InfoRow icon={<User className="size-4" />} label="Клиент" value={cleaning.client} />
+            <InfoRow icon={<MapPin className="size-4" />} label="Адрес" value={clientDetails.address} />
+            <InfoRow icon={<User className="size-4" />} label="Клиент" value={clientDetails.clientName} />
+            <InfoRow
+              icon={<Phone className="size-4" />}
+              label="Телефон"
+              value={clientDetails.clientPhone || 'Не указан'}
+            />
             <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />
           </dl>
+          {editingClient ? (
+            <form onSubmit={saveClientDetails} className="mt-5 space-y-3 border-t border-border pt-4">
+              <ClientField
+                label="Имя клиента"
+                value={clientDraft.clientName}
+                maxLength={120}
+                required
+                onChange={(clientName) => setClientDraft((current) => ({ ...current, clientName }))}
+              />
+              <ClientField
+                label="Телефон"
+                value={clientDraft.clientPhone}
+                maxLength={40}
+                type="tel"
+                onChange={(clientPhone) => setClientDraft((current) => ({ ...current, clientPhone }))}
+              />
+              <ClientField
+                label="Адрес"
+                value={clientDraft.address}
+                maxLength={300}
+                required
+                onChange={(address) => setClientDraft((current) => ({ ...current, address }))}
+              />
+              {clientSaveError && (
+                <p role="alert" className="text-sm text-destructive">
+                  Не удалось сохранить данные клиента
+                </p>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button type="submit" disabled={savingClient} className="flex-1 rounded-xl">
+                  {savingClient ? 'Сохраняем…' : 'Сохранить'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingClient}
+                  onClick={() => setEditingClient(false)}
+                  className="flex-1 rounded-xl"
+                >
+                  Отмена
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={startEditingClient}
+              className="mt-4 w-full rounded-xl"
+            >
+              <Pencil className="size-4" />
+              Изменить данные клиента
+            </Button>
+          )}
         </section>
 
         <ClientLinkBlock
           cleaningId={cleaning.id}
           token={clientToken}
           onToken={setClientToken}
+          canCreate={hasClientDetails}
           className="mt-4"
         />
 
@@ -461,11 +561,13 @@ function ClientLinkBlock({
   cleaningId,
   token,
   onToken,
+  canCreate,
   className,
 }: {
   cleaningId: string
   token: string | null
   onToken: (token: string) => void
+  canCreate: boolean
   className?: string
 }) {
   const [creating, setCreating] = useState(false)
@@ -517,12 +619,17 @@ function ClientLinkBlock({
         <Button
           type="button"
           variant="outline"
-          disabled={creating}
+          disabled={creating || !canCreate}
           onClick={createLink}
           className="mt-4 w-full rounded-xl"
         >
           {creating ? 'Создаём…' : 'Создать ссылку для клиента'}
         </Button>
+      )}
+      {!token && !canCreate && (
+        <p className="mt-2 text-center text-sm text-muted-foreground">
+          Сначала заполните данные клиента
+        </p>
       )}
       {copied && <p className="mt-2 text-center text-sm text-primary">Ссылка скопирована</p>}
       {error && (
@@ -531,6 +638,36 @@ function ClientLinkBlock({
         </p>
       )}
     </section>
+  )
+}
+
+function ClientField({
+  label,
+  value,
+  maxLength,
+  required = false,
+  type = 'text',
+  onChange,
+}: {
+  label: string
+  value: string
+  maxLength: number
+  required?: boolean
+  type?: 'text' | 'tel'
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1.5 block text-muted-foreground">{label}</span>
+      <input
+        type={type}
+        value={value}
+        maxLength={maxLength}
+        required={required}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-xl border border-border bg-background px-3 outline-none focus:ring-2 focus:ring-ring"
+      />
+    </label>
   )
 }
 

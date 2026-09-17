@@ -47,6 +47,9 @@ async function main() {
     const legacyPage = fs.readFileSync(path.join(__dirname, '../app/client/page.tsx'), 'utf8')
     assert.match(legacyPage, /Откройте персональную ссылку на уборку/)
     assert.doesNotMatch(legacyPage, /DEMO_CLEANING_ID|getCleaningData|ClientView/)
+    const clientView = fs.readFileSync(path.join(__dirname, '../app/client/client-view.tsx'), 'utf8')
+    assert.match(clientView, /cleaning\.client/)
+    assert.doesNotMatch(clientView, /clientPhone/)
   } finally {
     cleanings.getCleaningDataByClientToken = originalLookup
   }

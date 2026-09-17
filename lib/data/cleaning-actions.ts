@@ -22,6 +22,50 @@ export interface ClientLinkResult extends WriteResult {
   token?: string
 }
 
+export interface CleaningClientInput {
+  clientName: string
+  clientPhone?: string | null
+  address: string
+}
+
+export async function updateCleaningClient(
+  cleaningId: string,
+  data: CleaningClientInput,
+): Promise<WriteResult> {
+  try {
+    if (!data || typeof data !== 'object') return { ok: false }
+    if (typeof data.clientName !== 'string' || typeof data.address !== 'string') {
+      return { ok: false }
+    }
+    const rawClientPhone = data.clientPhone ?? ''
+    if (typeof rawClientPhone !== 'string') return { ok: false }
+
+    const clientName = data.clientName.trim()
+    const clientPhone = rawClientPhone.trim()
+    const address = data.address.trim()
+    if (
+      !clientName
+      || clientName.length > 120
+      || clientPhone.length > 40
+      || !address
+      || address.length > 300
+    ) return { ok: false }
+
+    const pool = getPostgresPool()
+    if (!pool) return { ok: cleaningId === DEMO_CLEANING_ID }
+
+    const result = await pool.query(
+      `UPDATE cleanings
+       SET client_name = $2, client_phone = $3, address = $4
+       WHERE id = $1`,
+      [cleaningId, clientName, clientPhone || null, address],
+    )
+    return { ok: result.rowCount === 1 }
+  } catch {
+    return { ok: false }
+  }
+}
+
 export async function getOrCreateClientLink(cleaningId: string): Promise<ClientLinkResult> {
   try {
     const pool = getPostgresPool()

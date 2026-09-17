@@ -32,6 +32,7 @@ interface CleaningRow {
   id: string
   number: string | null
   client_name: string | null
+  client_phone: string | null
   address: string | null
   started_at: Date | null
   status: string | null
@@ -112,8 +113,8 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
 
   const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
     pool.query<CleaningRow>(
-      `SELECT id, number, client_name, address, started_at, status, completed_at, accepted_at,
-              client_token
+      `SELECT id, number, client_name, client_phone, address, started_at, status, completed_at,
+              accepted_at, client_token
        FROM cleanings WHERE id = $1`,
       [cleaningId],
     ),
@@ -139,6 +140,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
     number: cleaningRow.number ?? '',
     address: cleaningRow.address ?? '',
     client: cleaningRow.client_name ?? '',
+    clientPhone: cleaningRow.client_phone,
     startedAt: cleaningRow.started_at?.toISOString() ?? '',
     status: toStatus(cleaningRow.status),
     completedAt: cleaningRow.completed_at?.toISOString() ?? null,

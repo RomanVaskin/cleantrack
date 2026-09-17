@@ -3,6 +3,7 @@ create table if not exists cleanings (
   id uuid primary key default gen_random_uuid(),
   number text not null,
   client_name text not null,
+  client_phone text,
   address text not null,
   started_at timestamptz,
   status text not null,

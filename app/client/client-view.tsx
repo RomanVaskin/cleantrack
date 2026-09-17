@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Check, ChevronLeft, Circle, Clock, Lock, MapPin } from 'lucide-react'
+import { Check, ChevronLeft, Circle, Clock, Lock, MapPin, User } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
@@ -105,7 +105,11 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             {finished ? 'Все услуги выполнены' : 'Уборка идёт по плану'}
           </p>
 
-          <dl className="mt-5 flex justify-center gap-6 border-t border-border pt-4 text-sm">
+          <dl className="mt-5 flex flex-wrap justify-center gap-x-6 gap-y-2 border-t border-border pt-4 text-sm">
+            <div className="flex items-center gap-2">
+              <User className="size-4 text-muted-foreground" />
+              <span className="font-medium">{cleaning.client}</span>
+            </div>
             <div className="flex items-center gap-2">
               <MapPin className="size-4 text-muted-foreground" />
               <span className="font-medium">{cleaning.address}</span>
