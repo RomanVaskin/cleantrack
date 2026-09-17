@@ -24,7 +24,7 @@ export async function getCleaningPhotos(cleaningId: string): Promise<Photo[]> {
   return result.rows.map(toPhoto)
 }
 
-export async function uploadCleaningPhoto(cleaningId: string, serviceId: string | null, bytes: Buffer, type: string): Promise<Photo> {
+export async function uploadCleaningPhoto(cleaningId: string, serviceId: string | null, bytes: Buffer): Promise<Photo> {
   const pool = getPostgresPool()
   if (!pool || !UUID_PATTERN.test(cleaningId) || (serviceId !== null && !UUID_PATTERN.test(serviceId))) throw new Error('Invalid target')
   const target = await pool.query(
@@ -33,7 +33,7 @@ export async function uploadCleaningPhoto(cleaningId: string, serviceId: string 
     [cleaningId, serviceId],
   )
   if (target.rowCount !== 1) throw new Error('Invalid target')
-  const storagePath = await savePhoto(bytes, type)
+  const storagePath = await savePhoto(bytes)
   try {
     const result = await pool.query<PhotoRow>(
       `INSERT INTO photos (cleaning_id, cleaning_service_id, storage_path)

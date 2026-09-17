@@ -5,6 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const Module = require('node:module')
 const ts = require('typescript')
+const sharp = require('sharp')
 const url = process.env.CLEANTRACK_TEST_DATABASE_URL
 if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) throw new Error('Disposable LOCAL database required')
 process.env.DATABASE_URL = url
@@ -19,7 +20,7 @@ Module._load = function (id, parent, isMain) {
   return originalLoad.call(this, id, parent, isMain)
 }
 require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true },
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
 }).outputText, filename)
 const { POST } = require('../app/api/photos/route.ts')
 const { GET } = require('../app/api/photos/[id]/route.ts')
@@ -35,14 +36,18 @@ const read = photoId => GET(new Request('http://localhost'), { params: Promise.r
 async function main() {
   try {
     const service = (await pool.query('SELECT id FROM cleaning_services WHERE cleaning_id = $1 LIMIT 1', [id])).rows[0].id
-    // Tiny format fixtures test storage and transport, not full image decoding.
-    const fixtures = [
-      ['image/jpeg', Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex')],
-      ['image/png', fs.readFileSync(path.join(__dirname, '../public/photos/sink.png'))],
-      ['image/webp', Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64')],
-    ]
+    const source = { create: { width: 3000, height: 1500, channels: 3, background: '#447799' } }
+    const jpeg = await sharp(source).jpeg().toBuffer()
     const heic = fs.readFileSync(path.join(__dirname, 'fixtures/mobile.heic'))
-    fixtures.push(['image/heic', heic], ['image/heif', heic])
+    const fixtures = [
+      ['image/jpeg', jpeg],
+      ['image/png', await sharp(source).png().toBuffer()],
+      ['image/webp', await sharp(source).webp().toBuffer()],
+      ['image/heic', heic], ['image/heif', heic],
+      ['image/avif', await sharp(source).avif().toBuffer()],
+      ['', jpeg], ['application/octet-stream', heic], ['image/x-heic', heic],
+      ['image/not-real', jpeg],
+    ]
     for (const [type, bytes] of fixtures) {
       const response = await upload(bytes, type, type === 'image/png' ? `?cleaning_service_id=${service}` : '')
       assert.equal(response.status, 201)
@@ -50,31 +55,53 @@ async function main() {
       created.push(photo.id)
       assert.equal(photo.cleaningServiceId, type === 'image/png' ? service : null)
       const stored = (await pool.query('SELECT storage_path FROM photos WHERE id = $1', [photo.id])).rows[0].storage_path
-      assert.match(stored, /^[a-f0-9-]+\.(jpg|png|webp)$/)
-      const converted = type === 'image/heic' || type === 'image/heif'
+      assert.match(stored, /^[a-f0-9-]+\.jpg$/)
       const saved = fs.readFileSync(path.join(directory, stored))
-      if (converted) {
-        assert.match(stored, /\.jpg$/)
-        assert.equal(saved.subarray(0, 3).toString('hex'), 'ffd8ff')
-        assert.notDeepEqual(saved, bytes)
-      } else assert.deepEqual(saved, bytes)
+      const metadata = await sharp(saved).metadata()
+      assert.equal(metadata.format, 'jpeg')
+      assert.ok(metadata.width <= 2400 && metadata.height <= 2400)
+      await sharp(saved).raw().toBuffer()
       const fetched = await read(photo.id)
       assert.equal(fetched.status, 200)
-      assert.equal(fetched.headers.get('content-type'), converted ? 'image/jpeg' : type)
+      assert.equal(fetched.headers.get('content-type'), 'image/jpeg')
       assert.deepEqual(Buffer.from(await fetched.arrayBuffer()), saved)
       // Each page reads this same request-time data after reload.
       for (let reload = 0; reload < 2; reload++) assert.ok((await getCleaningData(id)).photos.some(p => p.id === photo.id))
       if (type === 'image/png') assert.equal((await getCleaningData(id)).checklist.find(i => i.id === service).photo.id, photo.id)
     }
     for (const type of ['image/heic', 'image/heif']) {
-      assert.equal((await upload('bad', type)).status, 400)
-      assert.equal((await upload(Buffer.alloc(10 * 1024 * 1024 + 1), type)).status, 413)
+      assert.equal((await upload('bad', type)).status, 415)
+      assert.equal((await upload(Buffer.alloc(25 * 1024 * 1024 + 1), type)).status, 413)
     }
     assert.equal((await upload('bad', 'image/svg+xml')).status, 415)
-    assert.equal((await upload('bad', 'image/jpeg')).status, 400)
-    assert.equal((await upload(Buffer.alloc(10 * 1024 * 1024 + 1), 'image/png')).status, 413)
-    assert.equal((await upload('small', 'image/png', '', { 'content-length': String(10 * 1024 * 1024 + 1) })).status, 413)
+    assert.equal((await upload('bad', 'image/jpeg')).status, 415)
+    assert.equal((await upload(Buffer.alloc(25 * 1024 * 1024 + 1), 'image/png')).status, 413)
+    assert.equal((await upload('small', 'image/png', '', { 'content-length': String(25 * 1024 * 1024 + 1) })).status, 413)
     assert.equal((await upload(fixtures[0][1], 'image/jpeg', '?cleaning_service_id=99999999-9999-9999-9999-999999999999')).status, 400)
+    // Signatures alone are insufficient; full decoding must succeed.
+    assert.equal((await upload(Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex'), 'image/jpeg')).status, 415)
+    const rotated = await sharp({ create: { width: 40, height: 20, channels: 3, background: 'red' } }).withMetadata({ orientation: 6 }).jpeg().toBuffer()
+    const rotatedResponse = await upload(rotated, '')
+    assert.equal(rotatedResponse.status, 201)
+    const rotatedPhoto = await rotatedResponse.json()
+    created.push(rotatedPhoto.id)
+    const rotatedRead = await read(rotatedPhoto.id)
+    assert.equal(rotatedRead.status, 200)
+    const rotatedMeta = await sharp(Buffer.from(await rotatedRead.arrayBuffer())).metadata()
+    assert.equal(rotatedMeta.width, 20)
+    assert.equal(rotatedMeta.height, 40)
+    assert.equal(rotatedMeta.orientation, undefined)
+    // Legacy stored PNG/WebP remain readable through the same route.
+    for (const extension of ['png', 'webp']) {
+      const legacy = `44444444-4444-4444-4444-444444444444.${extension}`
+      const bytes = await sharp(source)[extension]().toBuffer()
+      fs.writeFileSync(path.join(directory, legacy), bytes)
+      await pool.query('UPDATE photos SET storage_path = $2 WHERE id = $1', [created[0], legacy])
+      const response = await read(created[0])
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('content-type'), `image/${extension}`)
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
+    }
     assert.equal((await read('../README.md')).status, 404)
     assert.equal((await read('99999999-9999-9999-9999-999999999999')).status, 404)
     const photoId = created[0]
@@ -109,7 +136,7 @@ async function main() {
     assert.deepEqual(fs.readdirSync(directory), before)
     assert.ok((await getCleaningData(id)).photos.every(p => p.src.startsWith('/photos/')))
     assert.equal((await read(created[1])).status, 404)
-    console.log('PASS: JPEG/PNG/WebP/HEIC/HEIF, metadata, service binding, reload reads, MIME/size/signature rejection, traversal/symlink/missing-file protection, mock fallback')
+    console.log('PASS: JPEG/PNG/WebP/HEIC/HEIF/AVIF, normalization, EXIF rotation, legacy reads, metadata, service binding, reload reads, MIME-independent detection, size/invalid-image rejection, traversal/symlink/missing-file protection, mock fallback')
   } finally {
     await pool.query('DELETE FROM photos WHERE id = ANY($1::uuid[])', [created])
     await pool.end()

@@ -62,10 +62,12 @@ repository. Production uploads require this variable; development defaults to
 `os.tmpdir()/cleantrack-photos`. Never use a `NEXT_PUBLIC_` prefix. No production
 server configuration is changed by this code.
 
-The cleaner uploads JPEG, PNG or WebP (up to 10 MiB) with a file picker supporting
-gallery selection. The server checks MIME and basic file signatures, generates
-UUID filenames and stores relative identifiers in PostgreSQL. This is not full
-image decoding or resizing. GET `/api/photos/[id]` resolves metadata and reads
+The cleaner uploads JPEG, PNG, WebP, HEIC/HEIF or AVIF (up to 25 MiB) from the
+gallery or camera. The server detects format from file contents regardless of MIME,
+decodes the image, applies orientation, and resizes within 2400×2400 without
+enlargement. Only the normalized JPEG (quality 82) is stored as UUID.jpg; originals
+are not retained. PostgreSQL stores that relative identifier.
+GET `/api/photos/[id]` resolves metadata and reads
 only UUID image filenames, refusing symlinks. Existing seeded demo image paths
 are matched against the fixed mock photo list; arbitrary stored paths are never
 sent to the browser. The client uses the same photos with its existing viewer.

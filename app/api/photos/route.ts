@@ -1,6 +1,7 @@
+import { PhotoInputError } from '@/lib/server/photo-storage'
 import { DEMO_CLEANING_ID } from '@/lib/data/cleanings'
 import { uploadCleaningPhoto } from '@/lib/data/photos'
-import { isPhotoType, MAX_PHOTO_BYTES } from '@/lib/photo-upload'
+import { photoUploadError, MAX_PHOTO_BYTES } from '@/lib/photo-upload'
 
 export const runtime = 'nodejs'
 
@@ -23,11 +24,9 @@ function failureReason(error: unknown): string {
 export async function POST(request: Request) {
   const fail = (status: number, reason: string) => {
     console.error('[photo-upload]', { status, reason })
-    return Response.json({ error: 'Не удалось загрузить фото' }, { status })
+    return Response.json({ error: photoUploadError(status) }, { status })
   }
-  const type = request.headers.get('content-type') || ''
-  if (!isPhotoType(type)) return fail(415, 'Unsupported MIME type')
-  if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 10 MiB')
+  if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 25 MiB')
   if (!request.body) return fail(400, 'Missing request body')
   try {
     // Bound memory even for chunked requests without Content-Length.
@@ -41,7 +40,7 @@ export async function POST(request: Request) {
         size += value.byteLength
         if (size > MAX_PHOTO_BYTES) {
           await reader.cancel()
-          return fail(413, 'Source photo exceeds 10 MiB')
+          return fail(413, 'Source photo exceeds 25 MiB')
         }
         chunks.push(Buffer.from(value))
       }
@@ -49,9 +48,10 @@ export async function POST(request: Request) {
       reader.releaseLock()
     }
     const serviceId = new URL(request.url).searchParams.get('cleaning_service_id')
-    const photo = await uploadCleaningPhoto(DEMO_CLEANING_ID, serviceId, Buffer.concat(chunks), type)
+    const photo = await uploadCleaningPhoto(DEMO_CLEANING_ID, serviceId, Buffer.concat(chunks))
     return Response.json(photo, { status: 201 })
   } catch (error) {
+    if (error instanceof PhotoInputError) return fail(error.status, error.message)
     return fail(400, failureReason(error))
   }
 }

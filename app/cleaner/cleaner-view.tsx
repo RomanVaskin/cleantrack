@@ -40,7 +40,7 @@ export function CleanerView({
 }: CleanerViewProps) {
   const [photos, setPhotos] = useState(initialPhotos)
   const [uploading, setUploading] = useState(false)
-  const [photoError, setPhotoError] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const [viewer, setViewer] = useState<Photo | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const photoTarget = useRef<string | null>(null)
@@ -106,15 +106,15 @@ export function CleanerView({
     uploadBusy.current = true
     const serviceId = photoTarget.current
     setUploading(true)
-    setPhotoError(false)
+    setPhotoError(null)
     try {
       const photo = await uploadCleaningPhoto(file, serviceId)
       setPhotos((previous) => [...previous, photo])
       if (serviceId) {
         setChecklist((previous) => previous.map((item) => item.id === serviceId ? { ...item, photo } : item))
       }
-    } catch {
-      setPhotoError(true)
+    } catch (error) {
+      setPhotoError(error instanceof Error && ['Фото слишком большое', 'Формат фото не поддерживается'].includes(error.message) ? error.message : 'Не удалось загрузить фото')
     } finally {
       uploadBusy.current = false
       setUploading(false)
@@ -388,7 +388,7 @@ export function CleanerView({
           <Button type="button" variant="outline" disabled={uploading} onClick={() => choosePhoto(null)} className="mt-3 rounded-xl">
             <Camera className="size-4" /> Добавить фото
           </Button>
-          <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
+          <input ref={fileInput} type="file" accept="image/*" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
             const file = event.target.files?.[0]
             event.target.value = ''
             if (file) void attachPhoto(file)
@@ -402,7 +402,7 @@ export function CleanerView({
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-md">
         <div className="border-t border-border bg-background/95 px-5 pb-2 pt-3 backdrop-blur">
           {uploading && <p role="status" className="mb-2 text-center text-xs text-muted-foreground">Загрузка фото…</p>}
-          {photoError && <p role="alert" className="mb-2 text-center text-xs text-destructive">Не удалось загрузить фото</p>}
+          {photoError && <p role="alert" className="mb-2 text-center text-xs text-destructive">{photoError}</p>}
           {saveError && (
             <p className="mb-2 text-center text-xs text-destructive">Не удалось сохранить изменение</p>
           )}

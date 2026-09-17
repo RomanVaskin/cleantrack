@@ -1,26 +1,20 @@
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024
-export const PHOTO_TYPES = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/heic': 'jpg',
-  'image/heif': 'jpg',
-} as const
+export const MAX_PHOTO_BYTES = 25 * 1024 * 1024
 
-export function isPhotoType(type: string): type is keyof typeof PHOTO_TYPES {
-  return Object.hasOwn(PHOTO_TYPES, type)
+export function photoUploadError(status: number) {
+  return status === 413 ? 'Фото слишком большое'
+    : status === 415 ? 'Формат фото не поддерживается'
+      : 'Не удалось загрузить фото'
 }
 
 export async function uploadCleaningPhoto(file: File, cleaningServiceId: string | null) {
-  if (!isPhotoType(file.type) || !file.size || file.size > MAX_PHOTO_BYTES) {
-    throw new Error('Invalid photo')
-  }
+  if (file.size > MAX_PHOTO_BYTES) throw new Error(photoUploadError(413))
+  if (!file.size) throw new Error(photoUploadError(415))
   const query = cleaningServiceId ? `?cleaning_service_id=${encodeURIComponent(cleaningServiceId)}` : ''
   const response = await fetch(`/api/photos${query}`, {
     method: 'POST',
-    headers: { 'Content-Type': file.type },
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
     body: file,
   })
-  if (!response.ok) throw new Error('Upload failed')
+  if (!response.ok) throw new Error(photoUploadError(response.status))
   return await response.json() as import('@/lib/types').Photo
 }
