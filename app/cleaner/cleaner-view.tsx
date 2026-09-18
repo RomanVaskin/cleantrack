@@ -224,6 +224,11 @@ export function CleanerView({
               value={clientDetails.clientPhone || 'Не указан'}
             />
             <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />
+            <InfoRow
+              icon={<Camera className="size-4" />}
+              label="Фотоотчёт"
+              value={cleaning.photoReportEnabled ? 'нужен' : 'не нужен'}
+            />
           </dl>
           {editingClient ? (
             <form onSubmit={saveClientDetails} className="mt-5 space-y-3 border-t border-border pt-4">

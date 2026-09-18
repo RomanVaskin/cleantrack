@@ -37,7 +37,7 @@ async function callTelegram(method: string, body: Record<string, unknown>): Prom
 }
 
 export function sendMessage(
-  chatId: number,
+  chatId: number | string,
   text: string,
   replyMarkup?: TelegramReplyMarkup,
 ): Promise<void> {
@@ -56,7 +56,7 @@ export function answerCallbackQuery(callbackQueryId: string, text?: string): Pro
 }
 
 export function editMessageText(
-  chatId: number,
+  chatId: number | string,
   messageId: number,
   text: string,
   replyMarkup?: InlineKeyboardMarkup,
@@ -70,7 +70,7 @@ export function editMessageText(
 }
 
 export function editMessageReplyMarkup(
-  chatId: number,
+  chatId: number | string,
   messageId: number,
   replyMarkup: InlineKeyboardMarkup,
 ): Promise<void> {

@@ -2,8 +2,10 @@ import 'server-only'
 
 import type { PoolClient } from 'pg'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
+import { confirmTelegramOrder, rejectTelegramOrder } from '@/lib/data/telegram-orders'
 import {
   answerCallbackQuery,
+  editMessageText,
   editMessageReplyMarkup,
   sendMessage,
   type TelegramReplyMarkup,
@@ -58,6 +60,24 @@ export type TelegramUpdate = {
 }
 
 const ROOM_PRICES: Record<number, number> = { 1: 4000, 2: 4500, 3: 5000, 4: 5500 }
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const DEFAULT_BASE_URL = 'https://cleantrack.ru'
+
+type CreatedOrder = {
+  id: string
+  number: string
+  clientName: string
+  clientPhone: string
+  address: string
+  rooms: number
+  windowsCount: number
+  ironingHours: number
+  balcony: boolean
+  photoReportEnabled: boolean
+  otherRequest: string | null
+  basePrice: number
+  totalPrice: number
+}
 
 const startKeyboard: TelegramReplyMarkup = {
   inline_keyboard: [[{ text: 'Заказать уборку', callback_data: 'order:start' }]],
@@ -172,6 +192,161 @@ function confirmationText(data: SessionData): string {
   return lines.join('\n')
 }
 
+function adminOrderText(order: CreatedOrder): string {
+  const lines = [
+    `🧹 Новая заявка ${order.number}`,
+    '',
+    `Клиент: ${order.clientName}`,
+    `Телефон: ${order.clientPhone}`,
+    `Адрес: ${order.address}`,
+    '',
+    `${roomLabel(order.rooms)} — ${formatPrice(order.basePrice)} ₽`,
+  ]
+  if (order.windowsCount > 0) {
+    lines.push(`Окна: ${order.windowsCount} — ${formatPrice(order.windowsCount * 800)} ₽`)
+  }
+  if (order.ironingHours > 0) {
+    lines.push(`Глажка: ${countLabel(order.ironingHours, 'час', 'часа', 'часов')} — ${formatPrice(order.ironingHours * 800)} ₽`)
+  }
+  if (order.balcony) lines.push('Балкон / лоджия — 1 000 ₽')
+  lines.push('', `Фотоотчёт: ${order.photoReportEnabled ? 'Да' : 'Нет'}`)
+  if (order.otherRequest) {
+    lines.push('', 'Дополнительно:', order.otherRequest, 'Стоимость согласуется отдельно.')
+  }
+  lines.push('', `Предварительная стоимость: ${formatPrice(order.totalPrice)} ₽`)
+  return lines.join('\n')
+}
+
+function adminOrderKeyboard(orderId: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [[
+      { text: '✅ Подтвердить', callback_data: `admin:confirm:${orderId}` },
+      { text: '❌ Отклонить', callback_data: `admin:reject:${orderId}` },
+    ]],
+  }
+}
+
+async function notifyAdminOfNewOrder(order: CreatedOrder): Promise<void> {
+  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim()
+  if (!adminChatId) {
+    console.warn('[telegram-webhook] Admin chat is not configured')
+    return
+  }
+  try {
+    await sendMessage(adminChatId, adminOrderText(order), adminOrderKeyboard(order.id))
+  } catch {
+    console.warn('[telegram-webhook] Failed to notify admin')
+  }
+}
+
+function cleanTrackBaseUrl(): string {
+  const configured = process.env.CLEANTRACK_BASE_URL?.trim() || DEFAULT_BASE_URL
+  try {
+    const url = new URL(configured)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Invalid protocol')
+    url.pathname = '/'
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return `${DEFAULT_BASE_URL}/`
+  }
+}
+
+function cleanTrackUrl(path: string): string {
+  return new URL(path.replace(/^\//, ''), cleanTrackBaseUrl()).toString()
+}
+
+async function safeAnswerCallback(callbackId: string, text?: string): Promise<void> {
+  try {
+    await answerCallbackQuery(callbackId, text)
+  } catch {
+    console.error('[telegram-webhook] Failed to acknowledge callback')
+  }
+}
+
+async function handleAdminCallback(
+  callback: TelegramCallbackQuery,
+  action: 'confirm' | 'reject',
+  orderId: string,
+): Promise<void> {
+  const message = callback.message
+  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim()
+  if (!message || !adminChatId || String(message.chat.id) !== String(adminChatId)) {
+    await safeAnswerCallback(callback.id, 'Недоступно.')
+    return
+  }
+  if (!UUID_PATTERN.test(orderId)) {
+    await safeAnswerCallback(callback.id, 'Заявка не найдена.')
+    return
+  }
+
+  if (action === 'confirm') {
+    const result = await confirmTelegramOrder(orderId)
+    if (result.kind === 'rejected') {
+      await safeAnswerCallback(callback.id, 'Заявка уже отклонена.')
+      return
+    }
+    if (result.kind !== 'confirmed') {
+      await safeAnswerCallback(callback.id, 'Не удалось подтвердить заявку.')
+      return
+    }
+
+    const clientUrl = cleanTrackUrl(`/client/${encodeURIComponent(result.clientToken)}`)
+    const cleanerUrl = cleanTrackUrl(`/cleaner/jobs/${result.cleaningId}`)
+    await safeAnswerCallback(callback.id, 'Заявка подтверждена.')
+    const deliveryResults = await Promise.allSettled([
+      sendMessage(
+        result.clientChatId,
+        '✅ Ваша уборка подтверждена.\n\n'
+          + `Персональная ссылка CleanTrack:\n${clientUrl}\n\n`
+          + 'В ней вы сможете следить за выполнением уборки, чек-листом и результатом.',
+      ),
+      editMessageText(
+        adminChatId,
+        message.message_id,
+        `✅ Заявка ${result.orderNumber} подтверждена.\n\n`
+          + `Уборка №${result.cleaningNumber}\n\n`
+          + `Клиент:\n${clientUrl}\n\n`
+          + `Клинер:\n${cleanerUrl}`,
+        { inline_keyboard: [] },
+      ),
+    ])
+    if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
+      console.warn('[telegram-webhook] Confirmation notification failed')
+    }
+    return
+  }
+
+  const result = await rejectTelegramOrder(orderId)
+  if (result.kind === 'confirmed') {
+    await safeAnswerCallback(callback.id, 'Заявка уже подтверждена.')
+    return
+  }
+  if (result.kind !== 'rejected') {
+    await safeAnswerCallback(callback.id, 'Не удалось отклонить заявку.')
+    return
+  }
+
+  await safeAnswerCallback(callback.id, 'Заявка отклонена.')
+  const deliveryResults = await Promise.allSettled([
+    sendMessage(
+      result.clientChatId,
+      `Заявка ${result.orderNumber} не подтверждена.\n\n`
+        + 'Если это произошло по ошибке, оформите новую заявку или свяжитесь с нами.',
+    ),
+    editMessageText(
+      adminChatId,
+      message.message_id,
+      `❌ Заявка ${result.orderNumber} отклонена.`,
+      { inline_keyboard: [] },
+    ),
+  ])
+  if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
+    console.warn('[telegram-webhook] Rejection notification failed')
+  }
+}
+
 async function loadSession(client: PoolClient, chatId: number, lock = false): Promise<Session | null> {
   const result = await client.query<{ state: string; data: SessionData }>(
     `SELECT state, data FROM telegram_sessions WHERE chat_id = $1${lock ? ' FOR UPDATE' : ''}`,
@@ -241,6 +416,10 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const chatId = message.chat.id
   const text = message.text?.trim() ?? ''
   if (/^\/start(?:@\w+)?(?:\s|$)/.test(text)) return start(chatId)
+  if (/^\/myid(?:@\w+)?(?:\s|$)/.test(text)) {
+    await sendMessage(chatId, `Ваш Telegram chat_id: ${chatId}`)
+    return
+  }
 
   const pool = await requirePool(chatId)
   if (!pool) return
@@ -313,16 +492,21 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 }
 
 async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
-  try {
-    await answerCallbackQuery(callback.id)
-  } catch {
-    console.error('[telegram-webhook] Failed to acknowledge callback')
+  const action = callback.data ?? ''
+  const adminAction = action.match(/^admin:(confirm|reject):(.+)$/)
+  if (adminAction) {
+    await handleAdminCallback(
+      callback,
+      adminAction[1] as 'confirm' | 'reject',
+      adminAction[2],
+    )
+    return
   }
+  await safeAnswerCallback(callback.id)
 
   const message = callback.message
   if (!message) return
   const chatId = message.chat.id
-  const action = callback.data ?? ''
   const pool = await requirePool(chatId)
   if (!pool) return
 
@@ -352,12 +536,13 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
          FROM orders WHERE number ~ '^CT-[0-9]+$'`,
       )
       const number = `CT-${numberResult.rows[0].next_number.padStart(6, '0')}`
-      await client.query(
+      const insertedOrder = await client.query<{ id: string }>(
         `INSERT INTO orders
           (number, telegram_chat_id, telegram_username, client_name, client_phone,
            address, rooms, windows_count, ironing_hours, balcony, photo_report_enabled,
            other_request, base_price, extras_price, total_price, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'new')`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'new')
+         RETURNING id`,
         [
           number, chatId, callback.from.username ?? null, data.clientName, data.clientPhone,
           data.address, data.rooms, data.windowsCount ?? 0, data.ironingHours ?? 0,
@@ -366,20 +551,40 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
         ],
       )
       await client.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
-      return { number, totalPrice }
+      return {
+        id: insertedOrder.rows[0].id,
+        number,
+        clientName: data.clientName,
+        clientPhone: data.clientPhone,
+        address: data.address,
+        rooms: data.rooms,
+        windowsCount: data.windowsCount ?? 0,
+        ironingHours: data.ironingHours ?? 0,
+        balcony: Boolean(data.balcony),
+        photoReportEnabled: data.photoReportEnabled,
+        otherRequest: data.otherRequest ?? null,
+        basePrice,
+        totalPrice,
+      } satisfies CreatedOrder
     })
 
     if (!result) {
       await sendMessage(chatId, 'Эта заявка уже отправлена или устарела. Отправьте /start для нового заказа.')
       return
     }
-    await sendMessage(
-      chatId,
-      `✅ Заявка ${result.number} принята.\n\n`
-        + `Предварительная стоимость: ${formatPrice(result.totalPrice)} ₽\n\n`
-        + 'Мы свяжемся с вами для подтверждения заказа и окончательной стоимости.\n\n'
-        + 'После подтверждения вы получите персональную ссылку CleanTrack, где сможете следить за выполнением уборки.',
-    )
+    const deliveryResults = await Promise.allSettled([
+      sendMessage(
+        chatId,
+        `✅ Заявка ${result.number} принята.\n\n`
+          + `Предварительная стоимость: ${formatPrice(result.totalPrice)} ₽\n\n`
+          + 'Мы свяжемся с вами для подтверждения заказа и окончательной стоимости.\n\n'
+          + 'После подтверждения вы получите персональную ссылку CleanTrack, где сможете следить за выполнением уборки.',
+      ),
+      notifyAdminOfNewOrder(result),
+    ])
+    if (deliveryResults[0].status === 'rejected') {
+      console.warn('[telegram-webhook] Order receipt notification failed')
+    }
     return
   }
 

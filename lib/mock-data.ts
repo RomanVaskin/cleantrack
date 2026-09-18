@@ -21,6 +21,7 @@ export const cleaning: Cleaning = {
   completedAt: null,
   acceptedAt: null,
   clientToken: null,
+  photoReportEnabled: false,
 }
 
 export const photos: Photo[] = [

@@ -58,6 +58,7 @@ interface CleaningRow {
   completed_at: Date | null
   accepted_at: Date | null
   client_token: string | null
+  photo_report_enabled: boolean
 }
 
 interface CleanerCleaningRow {
@@ -232,7 +233,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
   const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
     pool.query<CleaningRow>(
       `SELECT id, number, client_name, client_phone, address, started_at, status, completed_at,
-              accepted_at, client_token
+              accepted_at, client_token, photo_report_enabled
        FROM cleanings WHERE id = $1`,
       [cleaningId],
     ),
@@ -264,6 +265,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
     completedAt: cleaningRow.completed_at?.toISOString() ?? null,
     acceptedAt: cleaningRow.accepted_at?.toISOString() ?? null,
     clientToken: cleaningRow.client_token,
+    photoReportEnabled: cleaningRow.photo_report_enabled,
   }
 
   const checklist: ChecklistItem[] = servicesRes.rows.map((row) => ({
