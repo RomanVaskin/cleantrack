@@ -32,6 +32,7 @@ import {
 } from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { getCleaningStatusLabel } from '@/lib/cleaning-status'
+import { formatRequestedDate } from '@/lib/telegram-order-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -223,7 +224,9 @@ export function CleanerView({
               label="Телефон"
               value={clientDetails.clientPhone || 'Не указан'}
             />
-            <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />
+            {!cleaning.requestedTime && <InfoRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />}
+            {cleaning.requestedDate && <InfoRow icon={<Clock className="size-4" />} label="Дата" value={formatRequestedDate(cleaning.requestedDate)} />}
+            {cleaning.requestedTime && <InfoRow icon={<Clock className="size-4" />} label="Время" value={cleaning.requestedTime} />}
             <InfoRow
               icon={<Camera className="size-4" />}
               label="Фотоотчёт"
@@ -301,31 +304,7 @@ export function CleanerView({
             <h2 className="text-base font-semibold tracking-tight">Правила клиента</h2>
           </div>
 
-          <div className="mt-4 space-y-4 text-sm">
-            <RuleRow
-              question="Открывать шкафы, гардеробные и тумбочки?"
-              answer={cabinetOptions[clientRules.cabinets]}
-            />
-            <RuleRow
-              question="Перемещать личные вещи?"
-              answer={moveOptions[clientRules.moveItems]}
-            />
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
-                Категорически не трогать
-              </p>
-              <p className="mt-1 text-sm text-foreground">{clientRules.doNotTouch}</p>
-            </div>
-            <div className="rounded-xl border border-border bg-secondary/60 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Особые пожелания
-              </p>
-              <p className="mt-1 text-sm text-foreground">{clientRules.wishes}</p>
-            </div>
-          </div>
+          <ClientRulesDetails clientRules={clientRules} />
         </section>
 
         {/* What's included — selection */}
@@ -594,6 +573,8 @@ function CompletedCleaningView({
             <InfoRow icon={<User className="size-4" />} label="Клиент" value={clientDetails.clientName || 'Не указан'} />
             <InfoRow icon={<MapPin className="size-4" />} label="Адрес" value={clientDetails.address || 'Не указан'} />
             {clientDetails.clientPhone && <InfoRow icon={<Phone className="size-4" />} label="Телефон" value={clientDetails.clientPhone} />}
+            {cleaning.requestedDate && <InfoRow icon={<Clock className="size-4" />} label="Дата" value={formatRequestedDate(cleaning.requestedDate)} />}
+            {cleaning.requestedTime && <InfoRow icon={<Clock className="size-4" />} label="Время" value={cleaning.requestedTime} />}
             <InfoRow icon={<Check className="size-4" />} label="Прогресс" value={`${done} из ${total} услуг выполнено`} />
             <InfoRow icon={<Camera className="size-4" />} label="Фото" value={`${photos.length} фото`} />
           </dl>
@@ -624,14 +605,7 @@ function CompletedCleaningView({
             <Lock className="size-4 text-primary" />
             <h2 className="text-base font-semibold tracking-tight">Правила клиента</h2>
           </div>
-          <div className="mt-4 space-y-4 text-sm">
-            <RuleRow question="Открывать шкафы, гардеробные и тумбочки?" answer={cabinetOptions[clientRules.cabinets]} />
-            <RuleRow question="Перемещать личные вещи?" answer={moveOptions[clientRules.moveItems]} />
-          </div>
-          <div className="mt-4 space-y-3">
-            <RuleText label="Категорически не трогать" value={clientRules.doNotTouch} destructive />
-            <RuleText label="Особые пожелания" value={clientRules.wishes} />
-          </div>
+          <ClientRulesDetails clientRules={clientRules} />
         </section>
 
         <section className="mt-6">
@@ -877,6 +851,37 @@ function RuleRow({ question, answer }: { question: string; answer: string }) {
         {answer}
       </p>
     </div>
+  )
+}
+
+function ClientRulesDetails({ clientRules }: { clientRules: ClientRules }) {
+  const hasRules = clientRules.cabinets !== 'none'
+    || clientRules.moveItems !== 'none'
+    || Boolean(clientRules.doNotTouch.trim())
+
+  return (
+    <>
+      {hasRules ? (
+        <>
+          <div className="mt-4 space-y-4 text-sm">
+            <RuleRow question="Открывать шкафы, гардеробные и тумбочки?" answer={cabinetOptions[clientRules.cabinets]} />
+            <RuleRow question="Перемещать личные вещи?" answer={moveOptions[clientRules.moveItems]} />
+          </div>
+          {clientRules.doNotTouch && (
+            <div className="mt-4">
+              <RuleText label="Категорически не трогать" value={clientRules.doNotTouch} destructive />
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">Особых правил нет</p>
+      )}
+      {clientRules.wishes && (
+        <div className="mt-4">
+          <RuleText label="Особые пожелания" value={clientRules.wishes} />
+        </div>
+      )}
+    </>
   )
 }
 

@@ -61,10 +61,10 @@ where not exists (
 insert into client_rules (cleaning_id, cabinets_access, personal_items_access, do_not_touch, special_requests)
 select
   '11111111-1111-1111-1111-111111111111',
-  'selected',
-  'agree',
-  'Документы на рабочем столе, ноутбук, картины',
-  'В детской использовать только средство клиента'
+  'none',
+  'none',
+  '',
+  ''
 where not exists (
   select 1 from client_rules where cleaning_id = '11111111-1111-1111-1111-111111111111'
 );

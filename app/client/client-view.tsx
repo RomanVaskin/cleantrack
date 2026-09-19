@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { acceptCleaning } from '@/lib/data/cleaning-actions'
 import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { getCleaningStatusLabel } from '@/lib/cleaning-status'
+import { formatRequestedDate } from '@/lib/telegram-order-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
 import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,9 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
   const completed = status === 'completed'
   const accepted = status === 'accepted'
   const finished = completed || accepted
+  const hasClientRules = clientRules.cabinets !== 'none'
+    || clientRules.moveItems !== 'none'
+    || Boolean(clientRules.doNotTouch.trim())
 
   const active: ChecklistItem[] = useMemo(() => checklist.filter((s) => s.included), [checklist])
 
@@ -73,7 +77,9 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
             <SummaryRow icon={<MapPin className="size-4" />} label="Адрес" value={cleaning.address || 'Не указан'} />
             <SummaryRow icon={<Check className="size-4" />} label="Прогресс" value={`${done} из ${total} услуг выполнено`} />
             <SummaryRow icon={<Camera className="size-4" />} label="Фото" value={`${photos.length} фото`} />
-            {finished ? <HistoryRow label="Завершено" value={cleaning.completedAt} /> : <SummaryRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />}
+            {cleaning.requestedDate && <SummaryRow icon={<Clock className="size-4" />} label="Дата" value={formatRequestedDate(cleaning.requestedDate)} />}
+            {cleaning.requestedTime && <SummaryRow icon={<Clock className="size-4" />} label="Время" value={cleaning.requestedTime} />}
+            {finished ? <HistoryRow label="Завершено" value={cleaning.completedAt} /> : !cleaning.requestedTime && <SummaryRow icon={<Clock className="size-4" />} label="Начало" value={formatCleaningTime(cleaning.startedAt)} />}
             {accepted && <HistoryRow label="Принято клиентом" value={acceptedAt} />}
           </dl>
         </section>
@@ -122,16 +128,24 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
               <Lock className="size-4 text-primary" />
               <p className="text-sm font-medium">Клинер видит эти правила</p>
             </div>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Шкафы и тумбочки</dt>
-                <dd className="text-right font-medium">{cabinetOptions[clientRules.cabinets]}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Личные вещи</dt>
-                <dd className="text-right font-medium">{moveOptions[clientRules.moveItems]}</dd>
-              </div>
-            </dl>
+            {hasClientRules ? (
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Шкафы и тумбочки</dt>
+                  <dd className="text-right font-medium">{cabinetOptions[clientRules.cabinets]}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Личные вещи</dt>
+                  <dd className="text-right font-medium">{moveOptions[clientRules.moveItems]}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Категорически не трогать</dt>
+                  <dd className="text-right font-medium">{clientRules.doNotTouch || 'Ничего'}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">Особых правил нет</p>
+            )}
           </div>
         </section>
 

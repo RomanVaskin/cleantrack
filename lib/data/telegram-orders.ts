@@ -6,6 +6,7 @@ import {
   type CleaningServiceSelection,
 } from '@/lib/data/cleaning-create'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
+import { postgresDateToIso } from '@/lib/telegram-order-format'
 
 interface TelegramOrderRow {
   id: string
@@ -21,6 +22,11 @@ interface TelegramOrderRow {
   photo_report_enabled: boolean
   status: string
   cleaning_id: string | null
+  requested_date: string | Date | null
+  requested_time: string | null
+  cabinets_rule: 'all' | 'selected' | 'none' | null
+  personal_items_rule: 'return' | 'agree' | 'none' | null
+  do_not_touch: string | null
 }
 
 export type ConfirmTelegramOrderResult =
@@ -54,7 +60,8 @@ export async function confirmTelegramOrder(orderId: string): Promise<ConfirmTele
       const orderResult = await client.query<TelegramOrderRow>(
         `SELECT id, number, telegram_chat_id, client_name, client_phone, address,
                 windows_count, ironing_hours, balcony, other_request,
-                photo_report_enabled, status, cleaning_id
+                photo_report_enabled, status, cleaning_id, requested_date, requested_time,
+                cabinets_rule, personal_items_rule, do_not_touch
          FROM orders WHERE id = $1 FOR UPDATE`,
         [orderId],
       )
@@ -112,11 +119,13 @@ export async function confirmTelegramOrder(orderId: string): Promise<ConfirmTele
         clientPhone: order.client_phone,
         address: order.address,
         services,
-        cabinets: 'none',
-        moveItems: 'none',
-        doNotTouch: '',
+        cabinets: order.cabinets_rule ?? 'none',
+        moveItems: order.personal_items_rule ?? 'none',
+        doNotTouch: order.do_not_touch ?? '',
         wishes: specialRequests(order),
         photoReportEnabled: order.photo_report_enabled,
+        requestedDate: postgresDateToIso(order.requested_date),
+        requestedTime: order.requested_time,
         createClientToken: true,
       })
       if (!cleaning.ok || !cleaning.clientToken) return { kind: 'error' }
@@ -149,7 +158,8 @@ export async function rejectTelegramOrder(orderId: string): Promise<RejectTelegr
       const result = await client.query<TelegramOrderRow>(
         `SELECT id, number, telegram_chat_id, client_name, client_phone, address,
                 windows_count, ironing_hours, balcony, other_request,
-                photo_report_enabled, status, cleaning_id
+                photo_report_enabled, status, cleaning_id, requested_date, requested_time,
+                cabinets_rule, personal_items_rule, do_not_touch
          FROM orders WHERE id = $1 FOR UPDATE`,
         [orderId],
       )

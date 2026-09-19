@@ -16,6 +16,8 @@ export interface Cleaning {
   acceptedAt: string | null
   clientToken: string | null
   photoReportEnabled: boolean
+  requestedDate: string | null
+  requestedTime: string | null
 }
 
 /** Каталог услуг, которые в принципе может включать уборка */

@@ -26,7 +26,7 @@ Module._load = function (id, parent, isMain) {
 }
 require.extensions['.ts'] = (mod, filename) => {
   mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText, filename)
 }
 
@@ -58,6 +58,9 @@ async function main() {
       '002_add_cleaning_completion.sql',
       '003_add_client_token.sql',
       '004_add_client_phone.sql',
+      '005_add_telegram_orders.sql',
+      '006_link_orders_to_cleanings.sql',
+      '007_add_order_schedule_and_rules.sql',
     ]) {
       const migration = fs.readFileSync(path.join(__dirname, '../db/migrations', name), 'utf8')
       await pool.query(migration)
@@ -154,6 +157,29 @@ async function main() {
       personal_items_access: 'return',
       do_not_touch: 'Документы',
       special_requests: 'Средство клиента',
+    })
+
+    const telegramOrder = (await pool.query(
+      `INSERT INTO orders
+        (number, telegram_chat_id, client_name, client_phone, address, rooms,
+         photo_report_enabled, requested_date, requested_time, cabinets_rule,
+         personal_items_rule, do_not_touch, base_price, extras_price, total_price)
+       VALUES ('CT-900001', 42, 'Клиент Telegram', '+79990000000', 'Адрес Telegram', 2,
+               true, '2099-09-25', '10:30–13:30', 'selected', 'agree', 'Документы',
+               4500, 0, 4500)
+       RETURNING id`,
+    )).rows[0]
+    const { confirmTelegramOrder } = require('../lib/data/telegram-orders.ts')
+    const telegramConfirmation = await confirmTelegramOrder(telegramOrder.id)
+    assert.equal(telegramConfirmation.kind, 'confirmed')
+    const telegramData = await getCleaningData(telegramConfirmation.cleaningId)
+    assert.equal(telegramData.cleaning.requestedDate, '2099-09-25')
+    assert.equal(telegramData.cleaning.requestedTime, '10:30–13:30')
+    assert.deepEqual(telegramData.clientRules, {
+      cabinets: 'selected',
+      moveItems: 'agree',
+      doNotTouch: 'Документы',
+      wishes: '',
     })
     assert.ok((await getCleanerCleanings()).some(cleaning => cleaning.id === created.cleaningId))
     const createdData = await getCleaningData(created.cleaningId)
@@ -337,6 +363,7 @@ async function main() {
       completedAt: mock.cleaning.completedAt,
       acceptedAt: mock.cleaning.acceptedAt,
       progress: { done: 3, total: 8, percent: 38 },
+      photoCount: mock.photos.length,
     })
     assert.deepEqual(await updateChecklistItem(id, 's4', true), { ok: true })
     const mockCompletion = await completeCleaning(id)

@@ -22,6 +22,8 @@ export const cleaning: Cleaning = {
   acceptedAt: null,
   clientToken: null,
   photoReportEnabled: false,
+  requestedDate: null,
+  requestedTime: null,
 }
 
 export const photos: Photo[] = [
@@ -82,22 +84,22 @@ export function getInitialChecklist(): ChecklistItem[] {
 }
 
 export const cabinetOptions: Record<CabinetRule, string> = {
-  all: 'Да, все',
+  all: 'Да',
   selected: 'Только указанные клиентом',
   none: 'Нет',
 }
 
 export const moveOptions: Record<MoveRule, string> = {
-  return: 'Да, с возвращением на место',
+  return: 'Да',
   agree: 'Только после согласования',
   none: 'Нет',
 }
 
 export const clientRules: ClientRules = {
-  cabinets: 'selected',
-  moveItems: 'agree',
-  doNotTouch: 'Документы на рабочем столе, ноутбук, картины',
-  wishes: 'В детской использовать только средство клиента',
+  cabinets: 'none',
+  moveItems: 'none',
+  doNotTouch: '',
+  wishes: '',
 }
 
 export function countProgress(items: ChecklistItem[]) {

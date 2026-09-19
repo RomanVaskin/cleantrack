@@ -4,6 +4,16 @@ import type { PoolClient } from 'pg'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
 import { confirmTelegramOrder, rejectTelegramOrder } from '@/lib/data/telegram-orders'
 import {
+  ANY_TIME,
+  TIME_INTERVALS,
+  formatRequestedDate,
+  formatRules,
+  normalizeCustomTimeInterval,
+  normalizeRequestedDate,
+  type CabinetRule,
+  type PersonalItemsRule,
+} from '@/lib/telegram-order-format'
+import {
   answerCallbackQuery,
   editMessageText,
   editMessageReplyMarkup,
@@ -21,6 +31,13 @@ type SessionState =
   | 'awaiting_name'
   | 'awaiting_phone'
   | 'awaiting_address'
+  | 'awaiting_date'
+  | 'choosing_time'
+  | 'awaiting_custom_time'
+  | 'choosing_rules_presence'
+  | 'choosing_cabinets_rule'
+  | 'choosing_personal_items_rule'
+  | 'awaiting_do_not_touch'
   | 'awaiting_confirmation'
 
 type SessionData = {
@@ -36,6 +53,11 @@ type SessionData = {
   clientName?: string
   clientPhone?: string
   address?: string
+  requestedDate?: string
+  requestedTime?: string
+  cabinetsRule?: CabinetRule
+  personalItemsRule?: PersonalItemsRule
+  doNotTouch?: string
 }
 
 type Session = { state: SessionState; data: SessionData }
@@ -75,6 +97,11 @@ type CreatedOrder = {
   balcony: boolean
   photoReportEnabled: boolean
   otherRequest: string | null
+  requestedDate: string
+  requestedTime: string
+  cabinetsRule: CabinetRule
+  personalItemsRule: PersonalItemsRule
+  doNotTouch: string | null
   basePrice: number
   totalPrice: number
 }
@@ -122,6 +149,44 @@ const photoReportKeyboard: TelegramReplyMarkup = {
     [{ text: 'Да, нужен фотоотчёт', callback_data: 'photo:yes' }],
     [{ text: 'Нет, без фото', callback_data: 'photo:no' }],
   ],
+}
+
+const timeKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [
+    ...TIME_INTERVALS.map((interval, index) => ([{
+      text: interval,
+      callback_data: `time:slot:${index}`,
+    }])),
+    [{ text: 'Указать своё время', callback_data: 'time:custom' }],
+    [{ text: ANY_TIME, callback_data: 'time:any' }],
+  ],
+}
+
+const rulesPresenceKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [
+    [{ text: 'Нет, всё стандартно', callback_data: 'rules:none' }],
+    [{ text: 'Есть правила', callback_data: 'rules:yes' }],
+  ],
+}
+
+const cabinetsKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [
+    [{ text: 'Да', callback_data: 'cabinets:all' }],
+    [{ text: 'Только указанные клиентом', callback_data: 'cabinets:selected' }],
+    [{ text: 'Нет', callback_data: 'cabinets:none' }],
+  ],
+}
+
+const personalItemsKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [
+    [{ text: 'Да', callback_data: 'items:return' }],
+    [{ text: 'Только после согласования', callback_data: 'items:agree' }],
+    [{ text: 'Нет', callback_data: 'items:none' }],
+  ],
+}
+
+const doNotTouchKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [[{ text: 'Ничего', callback_data: 'do-not-touch:none' }]],
 }
 
 function extrasKeyboard(data: SessionData): TelegramReplyMarkup {
@@ -181,11 +246,18 @@ function confirmationText(data: SessionData): string {
   if (data.otherRequest) {
     lines.push('Дополнительно:', data.otherRequest, '', 'Стоимость этой услуги будет согласована отдельно.', '')
   }
-  lines.push(`Фотоотчёт: ${data.photoReportEnabled ? 'да' : 'нет'}`, '')
+  lines.push(
+    `Дата: ${formatRequestedDate(data.requestedDate!)}`,
+    `Время: ${data.requestedTime}`,
+    `Фотоотчёт: ${data.photoReportEnabled ? 'да' : 'нет'}`,
+    '',
+  )
   lines.push(
     `Имя: ${data.clientName}`,
     `Телефон: ${data.clientPhone}`,
     `Адрес: ${data.address}`,
+    '',
+    ...formatRules(data),
     '',
     'Окончательная стоимость подтверждается перед уборкой.',
   )
@@ -199,6 +271,8 @@ function adminOrderText(order: CreatedOrder): string {
     `Клиент: ${order.clientName}`,
     `Телефон: ${order.clientPhone}`,
     `Адрес: ${order.address}`,
+    `Дата: ${formatRequestedDate(order.requestedDate)}`,
+    `Время: ${order.requestedTime}`,
     '',
     `${roomLabel(order.rooms)} — ${formatPrice(order.basePrice)} ₽`,
   ]
@@ -213,6 +287,7 @@ function adminOrderText(order: CreatedOrder): string {
   if (order.otherRequest) {
     lines.push('', 'Дополнительно:', order.otherRequest, 'Стоимость согласуется отдельно.')
   }
+  lines.push('', ...formatRules(order))
   lines.push('', `Предварительная стоимость: ${formatPrice(order.totalPrice)} ₽`)
   return lines.join('\n')
 }
@@ -371,6 +446,19 @@ async function resetToRooms(client: PoolClient, chatId: number): Promise<void> {
   await saveSession(client, chatId, { state: 'choosing_rooms', data: {} })
 }
 
+async function askRules(client: PoolClient, chatId: number, data: SessionData) {
+  await saveSession(client, chatId, { state: 'choosing_rules_presence', data })
+  return {
+    text: 'Есть ли особые правила для уборки?',
+    markup: rulesPresenceKeyboard,
+  }
+}
+
+async function showConfirmation(client: PoolClient, chatId: number, data: SessionData) {
+  await saveSession(client, chatId, { state: 'awaiting_confirmation', data })
+  return { text: confirmationText(data), markup: confirmationKeyboard }
+}
+
 async function nextAfterExtras(client: PoolClient, chatId: number, data: SessionData) {
   if (data.windows && !data.windowsCount) {
     await saveSession(client, chatId, { state: 'awaiting_windows_count', data })
@@ -450,6 +538,33 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
       return nextAfterExtras(client, chatId, session.data)
     }
 
+    if (session.state === 'awaiting_date') {
+      const requestedDate = normalizeRequestedDate(text)
+      if (!requestedDate) {
+        return { text: 'Напишите будущую дату в формате ДД.ММ.ГГГГ, например: 25.12.2026' }
+      }
+      session.data.requestedDate = requestedDate
+      await saveSession(client, chatId, { state: 'choosing_time', data: session.data })
+      return { text: 'Во сколько удобно провести уборку?', markup: timeKeyboard }
+    }
+
+    if (session.state === 'awaiting_custom_time') {
+      const requestedTime = normalizeCustomTimeInterval(text)
+      if (!requestedTime) {
+        return { text: 'Не удалось распознать интервал. Напишите, например: 10:30–13:30' }
+      }
+      session.data.requestedTime = requestedTime
+      return askRules(client, chatId, session.data)
+    }
+
+    if (session.state === 'awaiting_do_not_touch') {
+      if (!text || text.length > 1000) {
+        return { text: 'Напишите, что нельзя трогать, текстом до 1000 символов или нажмите «Ничего».' }
+      }
+      session.data.doNotTouch = text
+      return showConfirmation(client, chatId, session.data)
+    }
+
     if (session.state === 'awaiting_name') {
       if (!text || text.length > 120) return { text: 'Введите имя длиной от 1 до 120 символов.' }
       session.data.clientName = text
@@ -480,8 +595,8 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
     if (session.state === 'awaiting_address') {
       if (!text || text.length > 300) return { text: 'Введите адрес длиной от 1 до 300 символов.' }
       session.data.address = text
-      await saveSession(client, chatId, { state: 'awaiting_confirmation', data: session.data })
-      return { text: confirmationText(session.data), markup: confirmationKeyboard }
+      await saveSession(client, chatId, { state: 'awaiting_date', data: session.data })
+      return { text: 'На какую дату нужна уборка?\nНапишите дату в формате ДД.ММ.ГГГГ.' }
     }
 
     return { restart: true as const }
@@ -527,6 +642,10 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
         || !data.clientName
         || !data.clientPhone
         || !data.address
+        || !data.requestedDate
+        || !data.requestedTime
+        || !data.cabinetsRule
+        || !data.personalItemsRule
       ) return null
       const { basePrice, extrasPrice, totalPrice } = calculatePrice(data)
 
@@ -540,14 +659,17 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
         `INSERT INTO orders
           (number, telegram_chat_id, telegram_username, client_name, client_phone,
            address, rooms, windows_count, ironing_hours, balcony, photo_report_enabled,
-           other_request, base_price, extras_price, total_price, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'new')
+           other_request, requested_date, requested_time, cabinets_rule, personal_items_rule,
+           do_not_touch, base_price, extras_price, total_price, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                 $16, $17, $18, $19, $20, 'new')
          RETURNING id`,
         [
           number, chatId, callback.from.username ?? null, data.clientName, data.clientPhone,
           data.address, data.rooms, data.windowsCount ?? 0, data.ironingHours ?? 0,
           Boolean(data.balcony), data.photoReportEnabled, data.otherRequest ?? null,
-          basePrice, extrasPrice, totalPrice,
+          data.requestedDate, data.requestedTime, data.cabinetsRule, data.personalItemsRule,
+          data.doNotTouch?.trim() || null, basePrice, extrasPrice, totalPrice,
         ],
       )
       await client.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
@@ -563,6 +685,11 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
         balcony: Boolean(data.balcony),
         photoReportEnabled: data.photoReportEnabled,
         otherRequest: data.otherRequest ?? null,
+        requestedDate: data.requestedDate,
+        requestedTime: data.requestedTime,
+        cabinetsRule: data.cabinetsRule,
+        personalItemsRule: data.personalItemsRule,
+        doNotTouch: data.doNotTouch?.trim() || null,
         basePrice,
         totalPrice,
       } satisfies CreatedOrder
@@ -637,6 +764,56 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
       session.data.photoReportEnabled = value === 'yes'
       await saveSession(client, chatId, { state: 'awaiting_name', data: session.data })
       return { text: 'Как к вам обращаться?' }
+    }
+
+    if (action.startsWith('time:') && session.state === 'choosing_time') {
+      if (action === 'time:custom') {
+        await saveSession(client, chatId, { state: 'awaiting_custom_time', data: session.data })
+        return { text: 'Напишите удобный интервал, например:\n10:30–13:30' }
+      }
+      if (action === 'time:any') session.data.requestedTime = ANY_TIME
+      else {
+        const slot = action.match(/^time:slot:(\d)$/)
+        if (!slot || !TIME_INTERVALS[Number(slot[1])]) return { restart: true as const }
+        session.data.requestedTime = TIME_INTERVALS[Number(slot[1])]
+      }
+      return askRules(client, chatId, session.data)
+    }
+
+    if (action.startsWith('rules:') && session.state === 'choosing_rules_presence') {
+      if (action === 'rules:none') {
+        session.data.cabinetsRule = 'none'
+        session.data.personalItemsRule = 'none'
+        session.data.doNotTouch = ''
+        return showConfirmation(client, chatId, session.data)
+      }
+      if (action !== 'rules:yes') return { restart: true as const }
+      await saveSession(client, chatId, { state: 'choosing_cabinets_rule', data: session.data })
+      return {
+        text: 'Можно открывать шкафы, гардеробные и тумбочки?',
+        markup: cabinetsKeyboard,
+      }
+    }
+
+    if (action.startsWith('cabinets:') && session.state === 'choosing_cabinets_rule') {
+      const value = action.slice(9)
+      if (!['all', 'selected', 'none'].includes(value)) return { restart: true as const }
+      session.data.cabinetsRule = value as CabinetRule
+      await saveSession(client, chatId, { state: 'choosing_personal_items_rule', data: session.data })
+      return { text: 'Можно перемещать личные вещи?', markup: personalItemsKeyboard }
+    }
+
+    if (action.startsWith('items:') && session.state === 'choosing_personal_items_rule') {
+      const value = action.slice(6)
+      if (!['return', 'agree', 'none'].includes(value)) return { restart: true as const }
+      session.data.personalItemsRule = value as PersonalItemsRule
+      await saveSession(client, chatId, { state: 'awaiting_do_not_touch', data: session.data })
+      return { text: 'Что категорически не трогать?', markup: doNotTouchKeyboard }
+    }
+
+    if (action === 'do-not-touch:none' && session.state === 'awaiting_do_not_touch') {
+      session.data.doNotTouch = ''
+      return showConfirmation(client, chatId, session.data)
     }
 
     return { restart: true as const }

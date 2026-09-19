@@ -18,6 +18,8 @@ export interface CreateCleaningRecordInput {
   doNotTouch: string
   wishes: string
   photoReportEnabled?: boolean
+  requestedDate?: string | null
+  requestedTime?: string | null
   createClientToken?: boolean
 }
 
@@ -52,8 +54,9 @@ export async function createCleaningRecord(
   const cleaningResult = await client.query<{ id: string }>(
     `INSERT INTO cleanings
       (number, client_name, client_phone, address, started_at, status,
-       completed_at, accepted_at, client_token, photo_report_enabled, created_at)
-     VALUES ($1, $2, $3, $4, now(), 'in_progress', NULL, NULL, NULL, $5, now())
+       completed_at, accepted_at, client_token, photo_report_enabled,
+       requested_date, requested_time, created_at)
+     VALUES ($1, $2, $3, $4, now(), 'in_progress', NULL, NULL, NULL, $5, $6, $7, now())
      RETURNING id`,
     [
       cleaningNumber,
@@ -61,6 +64,8 @@ export async function createCleaningRecord(
       input.clientPhone,
       input.address,
       Boolean(input.photoReportEnabled),
+      input.requestedDate ?? null,
+      input.requestedTime ?? null,
     ],
   )
   const cleaningId = cleaningResult.rows[0].id

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "node tests/telegram-order.cjs && node tests/cleaning-actions.cjs && node tests/client-routes.cjs && node tests/cleaner-routes.cjs && node tests/photo-upload.cjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

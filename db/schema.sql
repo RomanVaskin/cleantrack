@@ -10,6 +10,9 @@ create table if not exists cleanings (
   completed_at timestamptz,
   accepted_at timestamptz,
   client_token text unique,
+  photo_report_enabled boolean not null default false,
+  requested_date date,
+  requested_time text,
   created_at timestamptz not null default now()
 );
 
@@ -52,3 +55,37 @@ create index if not exists cleaning_services_cleaning_id_idx on cleaning_service
 create index if not exists cleaning_services_service_id_idx on cleaning_services (service_id);
 create index if not exists photos_cleaning_id_idx on photos (cleaning_id);
 create index if not exists photos_cleaning_service_id_idx on photos (cleaning_service_id);
+
+create table if not exists telegram_sessions (
+  chat_id bigint primary key,
+  state text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists orders (
+  id uuid primary key default gen_random_uuid(),
+  number text not null unique,
+  telegram_chat_id bigint not null,
+  telegram_username text,
+  client_name text not null,
+  client_phone text not null,
+  address text not null,
+  rooms integer not null,
+  windows_count integer not null default 0,
+  ironing_hours integer not null default 0,
+  balcony boolean not null default false,
+  photo_report_enabled boolean not null default false,
+  other_request text,
+  requested_date date not null,
+  requested_time text not null,
+  cabinets_rule text,
+  personal_items_rule text,
+  do_not_touch text,
+  base_price integer not null,
+  extras_price integer not null,
+  total_price integer not null,
+  status text not null default 'new',
+  cleaning_id uuid unique references cleanings(id) on delete set null,
+  created_at timestamptz not null default now()
+);

@@ -2,6 +2,7 @@ import 'server-only'
 import { connection } from 'next/server'
 import { getCleaningPhotos } from '@/lib/data/photos'
 import { getPostgresPool } from '@/lib/db/postgres'
+import { postgresDateToIso } from '@/lib/telegram-order-format'
 import {
   cleaning as mockCleaning,
   clientRules as mockClientRules,
@@ -59,6 +60,8 @@ interface CleaningRow {
   accepted_at: Date | null
   client_token: string | null
   photo_report_enabled: boolean
+  requested_date: string | Date | null
+  requested_time: string | null
 }
 
 interface CleanerCleaningRow {
@@ -233,7 +236,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
   const [cleaningRes, servicesRes, rulesRes, photos] = await Promise.all([
     pool.query<CleaningRow>(
       `SELECT id, number, client_name, client_phone, address, started_at, status, completed_at,
-              accepted_at, client_token, photo_report_enabled
+              accepted_at, client_token, photo_report_enabled, requested_date, requested_time
        FROM cleanings WHERE id = $1`,
       [cleaningId],
     ),
@@ -266,6 +269,8 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
     acceptedAt: cleaningRow.accepted_at?.toISOString() ?? null,
     clientToken: cleaningRow.client_token,
     photoReportEnabled: cleaningRow.photo_report_enabled,
+    requestedDate: postgresDateToIso(cleaningRow.requested_date),
+    requestedTime: cleaningRow.requested_time,
   }
 
   const checklist: ChecklistItem[] = servicesRes.rows.map((row) => ({
@@ -286,7 +291,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
         doNotTouch: rulesRow.do_not_touch ?? '',
         wishes: rulesRow.special_requests ?? '',
       }
-    : mockClientRules
+    : { cabinets: 'none', moveItems: 'none', doNotTouch: '', wishes: '' }
 
   return { cleaning, checklist, clientRules, photos }
 }
