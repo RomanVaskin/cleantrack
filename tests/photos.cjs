@@ -94,6 +94,42 @@ async function main() {
     created.push(otherServicePhoto.id)
     assert.equal(otherServicePhoto.cleaningServiceId, otherService)
     assert.equal((await upload(jpeg, 'image/jpeg', `?cleaning_service_id=${service}`, {}, otherCleaning)).status, 400)
+
+    // Section-level photos: multiple photos per section, no item association, sections don't mix.
+    const kitchenPhoto1Response = await upload(jpeg, 'image/jpeg', '?section_code=kitchen')
+    assert.equal(kitchenPhoto1Response.status, 201)
+    const kitchenPhoto1 = await kitchenPhoto1Response.json()
+    created.push(kitchenPhoto1.id)
+    assert.equal(kitchenPhoto1.cleaningServiceId, null)
+    assert.equal(kitchenPhoto1.sectionCode, 'kitchen')
+    const kitchenPhoto2Response = await upload(jpeg, 'image/jpeg', '?section_code=kitchen')
+    assert.equal(kitchenPhoto2Response.status, 201)
+    const kitchenPhoto2 = await kitchenPhoto2Response.json()
+    created.push(kitchenPhoto2.id)
+    assert.notEqual(kitchenPhoto2.id, kitchenPhoto1.id)
+    const bathroomPhotoResponse = await upload(jpeg, 'image/jpeg', '?section_code=bathroom')
+    assert.equal(bathroomPhotoResponse.status, 201)
+    const bathroomPhoto = await bathroomPhotoResponse.json()
+    created.push(bathroomPhoto.id)
+    assert.equal(bathroomPhoto.sectionCode, 'bathroom')
+    const sectionRows = (await pool.query(
+      'SELECT id, section_code FROM photos WHERE cleaning_id = $1 AND section_code IS NOT NULL ORDER BY created_at',
+      [id],
+    )).rows
+    assert.deepEqual(sectionRows.map(r => r.section_code), ['kitchen', 'kitchen', 'bathroom'])
+    const dataWithSections = await getCleaningData(id)
+    assert.deepEqual(
+      dataWithSections.photos.filter(p => p.sectionCode === 'kitchen').map(p => p.id).sort(),
+      [kitchenPhoto1.id, kitchenPhoto2.id].sort(),
+    )
+    assert.equal(dataWithSections.photos.filter(p => p.sectionCode === 'bathroom').length, 1)
+    // Physical file is never duplicated: two distinct uploads produce two distinct storage paths.
+    const kitchenPaths = (await pool.query('SELECT storage_path FROM photos WHERE id = ANY($1::uuid[])', [[kitchenPhoto1.id, kitchenPhoto2.id]])).rows
+    assert.notEqual(kitchenPaths[0].storage_path, kitchenPaths[1].storage_path)
+    // Invalid or conflicting section targeting is rejected.
+    assert.equal((await upload(jpeg, 'image/jpeg', '?section_code=garage')).status, 400)
+    assert.equal((await upload(jpeg, 'image/jpeg', `?cleaning_service_id=${service}&section_code=kitchen`)).status, 400)
+
     for (const type of ['image/heic', 'image/heif']) {
       assert.equal((await upload('bad', type)).status, 415)
       assert.equal((await upload(Buffer.alloc(50 * 1024 * 1024 + 1), type)).status, 413)

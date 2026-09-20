@@ -3,6 +3,9 @@ export type CleaningStatus = 'in_progress' | 'completed' | 'accepted'
 export type CabinetRule = 'all' | 'selected' | 'none'
 export type MoveRule = 'return' | 'agree' | 'none'
 
+/** Fixed base-cleaning checklist sections; photos and items group under these. */
+export type SectionCode = 'rooms' | 'kitchen' | 'bathroom' | 'completion'
+
 /** Уборка — единица работы, привязанная к клиенту и адресу */
 export interface Cleaning {
   id: string
@@ -29,6 +32,8 @@ export interface Service {
 export interface Photo {
   id?: string
   cleaningServiceId?: string | null
+  /** Set for a base-cleaning section photo; mutually exclusive with cleaningServiceId. */
+  sectionCode?: SectionCode | null
   src: string
   alt: string
 }
@@ -45,6 +50,8 @@ export interface ChecklistItem {
   done: boolean
   photo: Photo | null
   note?: string
+  /** Non-null for base-cleaning items; null for the flat add-on catalog. */
+  sectionCode?: SectionCode | null
 }
 
 export interface ClientRules {

@@ -31,8 +31,16 @@ async function main() {
   }
   assert.deepEqual(await uploadCleaningPhoto(selected, cleaningId, '22222222-2222-2222-2222-222222222201'), { id: 'photo' })
   assert.equal(calls, 5)
+  global.fetch = async (url, options) => {
+    calls++
+    assert.equal(url, `/api/photos?cleaning_id=${cleaningId}&section_code=kitchen`)
+    assert.equal(options.body, selected)
+    return Response.json({ id: 'photo' }, { status: 201 })
+  }
+  assert.deepEqual(await uploadCleaningPhoto(selected, cleaningId, null, 'kitchen'), { id: 'photo' })
+  assert.equal(calls, 6)
   await assert.rejects(uploadCleaningPhoto({ size: MAX_PHOTO_BYTES + 1 }, cleaningId, null), /Фото слишком большое/)
-  assert.equal(calls, 5)
+  assert.equal(calls, 6)
   for (const [status, message] of [[413, 'Фото слишком большое'], [415, 'Формат фото не поддерживается'], [500, 'Не удалось загрузить фото']]) {
     global.fetch = async () => new Response('', { status })
     await assert.rejects(uploadCleaningPhoto(selected, cleaningId, null), { message })

@@ -10,11 +10,13 @@ export async function uploadCleaningPhoto(
   file: File,
   cleaningId: string,
   cleaningServiceId: string | null,
+  sectionCode?: string | null,
 ) {
   if (file.size > MAX_PHOTO_BYTES) throw new Error(photoUploadError(413))
   if (!file.size) throw new Error(photoUploadError(415))
   const params = new URLSearchParams({ cleaning_id: cleaningId })
   if (cleaningServiceId) params.set('cleaning_service_id', cleaningServiceId)
+  if (sectionCode) params.set('section_code', sectionCode)
   const response = await fetch(`/api/photos?${params}`, {
     method: 'POST',
     headers: { 'Content-Type': file.type || 'application/octet-stream' },

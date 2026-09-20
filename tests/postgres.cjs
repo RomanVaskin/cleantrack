@@ -35,6 +35,7 @@ const {
   getCleaningData,
   getCleaningDataByClientToken,
   getCleanerCleanings,
+  getServices,
   DEMO_CLEANING_ID: id,
 } = require('../lib/data/cleanings.ts')
 const {
@@ -61,6 +62,7 @@ async function main() {
       '005_add_telegram_orders.sql',
       '006_link_orders_to_cleanings.sql',
       '007_add_order_schedule_and_rules.sql',
+      '008_add_checklist_sections.sql',
     ]) {
       const migration = fs.readFileSync(path.join(__dirname, '../db/migrations', name), 'utf8')
       await pool.query(migration)
@@ -75,7 +77,10 @@ async function main() {
       (SELECT count(*)::int FROM cleaning_services) checklist,
       (SELECT count(*)::int FROM client_rules) rules,
       (SELECT count(*)::int FROM photos) photos`)
-    assert.deepEqual(counts.rows[0], { cleanings: 1, services: 12, checklist: 12, rules: 1, photos: 3 })
+    // 12 flat catalog services (legacy demo/add-ons) + 25 grouped base-cleaning section
+    // items (8 rooms + 8 kitchen + 6 bathroom + 3 completion); the demo seed cleaning
+    // itself keeps its original 12 flat checklist rows (backward compatibility).
+    assert.deepEqual(counts.rows[0], { cleanings: 1, services: 37, checklist: 12, rules: 1, photos: 3 })
     const data = await getCleaningData(id)
     const cleanerCleanings = await getCleanerCleanings()
     assert.equal(cleanerCleanings.length, 1)
@@ -117,8 +122,10 @@ async function main() {
       moveItems: 'none',
     }), { ok: false, error: 'validation', field: 'serviceId' })
 
+    // s2/s3 are plain add-on services (no expansion), so this covers the exact-match
+    // insertion path; base-cleaning ('s1') expansion is covered separately below.
     const serviceIds = (await pool.query(
-      "SELECT id FROM services WHERE code IN ('s1', 's3') ORDER BY code",
+      "SELECT id FROM services WHERE code IN ('s2', 's3') ORDER BY code",
     )).rows.map(row => row.id)
     const created = await createCleaning({
       clientName: '  Новый клиент  ',
@@ -159,6 +166,59 @@ async function main() {
       special_requests: 'Средство клиента',
     })
 
+    // The flat catalog picker (manual "new cleaning" form) never exposes the 25
+    // grouped base-cleaning items directly; only 's1' triggers their expansion.
+    const catalog = await getServices()
+    assert.equal(catalog.length, 12)
+    assert.ok(catalog.every(service => !service.id.startsWith('base_')))
+
+    // Selecting base cleaning ('s1') alone expands into the fixed 4-section/25-item
+    // checklist instead of inserting a single 's1' row.
+    const s1Id = (await pool.query("SELECT id FROM services WHERE code = 's1'")).rows[0].id
+    const baseOnly = await createCleaning({
+      clientName: 'Базовая уборка',
+      address: 'Адрес базовой уборки',
+      selectedServiceIds: [s1Id],
+      cabinets: 'none',
+      moveItems: 'none',
+    })
+    assert.equal(baseOnly.ok, true)
+    const baseOnlyServices = await pool.query(
+      `SELECT s.code, s.section_code, cs.is_selected, cs.is_done, cs.completed_at
+       FROM cleaning_services cs JOIN services s ON s.id = cs.service_id
+       WHERE cs.cleaning_id = $1`,
+      [baseOnly.cleaningId],
+    )
+    assert.equal(baseOnlyServices.rowCount, 25)
+    assert.ok(baseOnlyServices.rows.every(row => row.is_selected === true && row.is_done === false && row.completed_at === null))
+    assert.ok(baseOnlyServices.rows.every(row => row.code !== 's1'))
+    const bySection = baseOnlyServices.rows.reduce((acc, row) => {
+      acc[row.section_code] = (acc[row.section_code] ?? 0) + 1
+      return acc
+    }, {})
+    assert.deepEqual(bySection, { rooms: 8, kitchen: 8, bathroom: 6, completion: 3 })
+    const baseOnlyData = await getCleaningData(baseOnly.cleaningId)
+    assert.equal(baseOnlyData.checklist.length, 25)
+    assert.ok(baseOnlyData.checklist.every(item => item.sectionCode !== null && item.included && !item.done))
+    assert.ok(baseOnlyData.checklist.some(item => item.label === 'Сменить постельное бельё'))
+    assert.ok(baseOnlyData.checklist.some(item => item.label === 'Убрать холодильник внутри'))
+    assert.ok(baseOnlyData.checklist.some(item => item.label === 'Убрать духовку внутри'))
+
+    // Base cleaning plus a real add-on: expansion replaces only the 's1' row.
+    const s3Id = (await pool.query("SELECT id FROM services WHERE code = 's3'")).rows[0].id
+    const baseWithAddon = await createCleaning({
+      clientName: 'Базовая уборка с доп. услугой',
+      address: 'Адрес базовой уборки 2',
+      selectedServiceIds: [s1Id, s3Id],
+      cabinets: 'none',
+      moveItems: 'none',
+    })
+    assert.equal(baseWithAddon.ok, true)
+    const baseWithAddonData = await getCleaningData(baseWithAddon.cleaningId)
+    assert.equal(baseWithAddonData.checklist.length, 26)
+    assert.equal(baseWithAddonData.checklist.filter(item => item.sectionCode !== null).length, 25)
+    assert.equal(baseWithAddonData.checklist.filter(item => item.sectionCode === null).length, 1)
+
     const telegramOrder = (await pool.query(
       `INSERT INTO orders
         (number, telegram_chat_id, client_name, client_phone, address, rooms,
@@ -181,6 +241,10 @@ async function main() {
       doNotTouch: 'Документы',
       wishes: '',
     })
+    // Telegram confirmation always includes 's1' (base cleaning): it now expands into
+    // the grouped 25-item checklist instead of a single flat row.
+    assert.equal(telegramData.checklist.length, 25)
+    assert.ok(telegramData.checklist.every(item => item.sectionCode !== null))
     assert.ok((await getCleanerCleanings()).some(cleaning => cleaning.id === created.cleaningId))
     const createdData = await getCleaningData(created.cleaningId)
     assert.equal(createdData.cleaning.client, 'Новый клиент')

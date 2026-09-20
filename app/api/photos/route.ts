@@ -1,6 +1,8 @@
 import { PhotoInputError, UUID_PATTERN } from '@/lib/server/photo-storage'
 import { uploadCleaningPhoto } from '@/lib/data/photos'
 import { photoUploadError, MAX_PHOTO_BYTES } from '@/lib/photo-upload'
+import { isSectionCode } from '@/lib/checklist-sections'
+import type { SectionCode } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -28,9 +30,16 @@ export async function POST(request: Request) {
   const params = new URL(request.url).searchParams
   const cleaningId = params.get('cleaning_id')
   const serviceId = params.get('cleaning_service_id')
-  if (!cleaningId || !UUID_PATTERN.test(cleaningId) || (serviceId !== null && !UUID_PATTERN.test(serviceId))) {
+  const sectionCodeParam = params.get('section_code')
+  if (
+    !cleaningId || !UUID_PATTERN.test(cleaningId)
+    || (serviceId !== null && !UUID_PATTERN.test(serviceId))
+    || (sectionCodeParam !== null && !isSectionCode(sectionCodeParam))
+    || (serviceId !== null && sectionCodeParam !== null)
+  ) {
     return fail(400, 'Invalid target')
   }
+  const sectionCode: SectionCode | null = isSectionCode(sectionCodeParam) ? sectionCodeParam : null
   if (Number(request.headers.get('content-length')) > MAX_PHOTO_BYTES) return fail(413, 'Source photo exceeds 50 MiB')
   if (!request.body) return fail(400, 'Missing request body')
   try {
@@ -52,7 +61,7 @@ export async function POST(request: Request) {
     } finally {
       reader.releaseLock()
     }
-    const photo = await uploadCleaningPhoto(cleaningId, serviceId, Buffer.concat(chunks))
+    const photo = await uploadCleaningPhoto(cleaningId, serviceId, sectionCode, Buffer.concat(chunks))
     return Response.json(photo, { status: 201 })
   } catch (error) {
     if (error instanceof PhotoInputError) return fail(error.status, error.message)

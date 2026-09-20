@@ -18,6 +18,7 @@ import type {
   CleaningStatus,
   MoveRule,
   Photo,
+  SectionCode,
 } from '@/lib/types'
 
 /** Уборка, которую показывает demo-экран клинера на этом этапе. */
@@ -85,6 +86,7 @@ interface CleaningServiceRow {
   note: string | null
   service_id: string
   title: string
+  section_code: string | null
 }
 
 interface ClientRulesRow {
@@ -142,7 +144,7 @@ export async function getServices(): Promise<CatalogService[]> {
     if (!pool) return mockServices
 
     const result = await pool.query<{ id: string; title: string }>(
-      'SELECT id, title FROM services ORDER BY sort_order, id',
+      'SELECT id, title FROM services WHERE section_code IS NULL ORDER BY sort_order, id',
     )
     return result.rows.map((row) => ({ id: row.id, label: row.title }))
   } catch {
@@ -241,9 +243,14 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
       [cleaningId],
     ),
     pool.query<CleaningServiceRow>(
-      `SELECT cs.id, cs.service_id, cs.is_selected, cs.is_done, cs.note, s.title
+      `SELECT cs.id, cs.service_id, cs.is_selected, cs.is_done, cs.note, s.title, s.section_code
        FROM cleaning_services cs JOIN services s ON s.id = cs.service_id
-       WHERE cs.cleaning_id = $1 ORDER BY s.sort_order, s.id, cs.id`,
+       WHERE cs.cleaning_id = $1
+       ORDER BY
+         CASE s.section_code
+           WHEN 'rooms' THEN 0 WHEN 'kitchen' THEN 1 WHEN 'bathroom' THEN 2 WHEN 'completion' THEN 3 ELSE 4
+         END,
+         s.section_order NULLS LAST, s.sort_order, s.id, cs.id`,
       [cleaningId],
     ),
     pool.query<ClientRulesRow>(
@@ -281,6 +288,7 @@ async function readCleaningData(cleaningId: string): Promise<CleaningData | null
     done: row.is_done,
     photo: photos.find((photo) => photo.cleaningServiceId === row.id) ?? null,
     note: row.note ?? undefined,
+    sectionCode: (row.section_code as SectionCode | null) ?? null,
   }))
 
   const rulesRow = rulesRes.rows[0]

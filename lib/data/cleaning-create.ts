@@ -38,11 +38,30 @@ export async function createCleaningRecord(
   input: CreateCleaningRecordInput,
 ): Promise<CreateCleaningRecordResult> {
   const serviceIds = input.services.map((service) => service.id)
-  const serviceResult = await client.query<{ id: string }>(
-    'SELECT id FROM services WHERE id = ANY($1::uuid[])',
+  const serviceResult = await client.query<{ id: string; code: string }>(
+    'SELECT id, code FROM services WHERE id = ANY($1::uuid[])',
     [serviceIds],
   )
   if (serviceResult.rowCount !== serviceIds.length) return { ok: false, field: 'serviceId' }
+
+  // "Base cleaning" (code 's1') expands into the fixed 4-section/25-item checklist
+  // catalog instead of inserting a single 's1' row, so new base cleanings get the
+  // grouped rooms/kitchen/bathroom/completion structure without double-listing work.
+  const codeById = new Map(serviceResult.rows.map((row) => [row.id, row.code]))
+  const baseCleaningSelection = input.services.find((service) => codeById.get(service.id) === 's1')
+  let expandedServices = input.services
+  if (baseCleaningSelection) {
+    const sectionRows = await client.query<{ id: string }>(
+      `SELECT id FROM services WHERE section_code IS NOT NULL
+       ORDER BY CASE section_code
+         WHEN 'rooms' THEN 0 WHEN 'kitchen' THEN 1 WHEN 'bathroom' THEN 2 WHEN 'completion' THEN 3 ELSE 4
+       END, section_order`,
+    )
+    expandedServices = [
+      ...input.services.filter((service) => service.id !== baseCleaningSelection.id),
+      ...sectionRows.rows.map((row) => ({ id: row.id })),
+    ]
+  }
 
   // This is the existing CleanTrack cleaning-number serialization mechanism.
   await client.query('SELECT pg_advisory_xact_lock(482917)')
@@ -70,7 +89,7 @@ export async function createCleaningRecord(
   )
   const cleaningId = cleaningResult.rows[0].id
 
-  for (const service of input.services) {
+  for (const service of expandedServices) {
     await client.query(
       `INSERT INTO cleaning_services
         (cleaning_id, service_id, is_selected, is_done, note, completed_at)

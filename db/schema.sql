@@ -20,7 +20,11 @@ create table if not exists services (
   id uuid primary key default gen_random_uuid(),
   code text unique not null,
   title text not null,
-  sort_order integer not null default 0
+  sort_order integer not null default 0,
+  -- Base-cleaning checklist items belong to a fixed section ('rooms' | 'kitchen' |
+  -- 'bathroom' | 'completion'); NULL keeps a service in the flat add-on catalog.
+  section_code text,
+  section_order integer
 );
 
 create table if not exists cleaning_services (
@@ -46,6 +50,8 @@ create table if not exists photos (
   id uuid primary key default gen_random_uuid(),
   cleaning_id uuid not null references cleanings(id) on delete cascade,
   cleaning_service_id uuid references cleaning_services(id) on delete set null,
+  -- Section-level photo (base-cleaning checklist); mutually exclusive with cleaning_service_id.
+  section_code text,
   storage_path text not null,
   created_at timestamptz not null default now()
 );
@@ -55,6 +61,7 @@ create index if not exists cleaning_services_cleaning_id_idx on cleaning_service
 create index if not exists cleaning_services_service_id_idx on cleaning_services (service_id);
 create index if not exists photos_cleaning_id_idx on photos (cleaning_id);
 create index if not exists photos_cleaning_service_id_idx on photos (cleaning_service_id);
+create index if not exists photos_section_code_idx on photos (cleaning_id, section_code);
 
 create table if not exists telegram_sessions (
   chat_id bigint primary key,

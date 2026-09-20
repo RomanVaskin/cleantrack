@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Camera, Check, ChevronLeft, Circle, Clock, Lock, MapPin, User } from 'lucide-react'
+import { Camera, Check, ChevronDown, ChevronLeft, Circle, Clock, Lock, MapPin, User } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { ProgressBar } from '@/components/progress-bar'
 import { PhotoViewer } from '@/components/photo-viewer'
@@ -12,7 +12,8 @@ import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { getCleaningStatusLabel } from '@/lib/cleaning-status'
 import { formatRequestedDate } from '@/lib/telegram-order-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
-import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
+import { aggregateGalleryPhotos, groupIntoSections, SECTION_TITLES, type ChecklistSection } from '@/lib/checklist-sections'
+import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo, SectionCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface ClientViewProps {
@@ -28,6 +29,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
   const [accepting, setAccepting] = useState(false)
   const [acceptError, setAcceptError] = useState(false)
   const [viewer, setViewer] = useState<{ src: string; alt: string } | null>(null)
+  const [openSections, setOpenSections] = useState<Set<SectionCode>>(new Set())
   const completed = status === 'completed'
   const accepted = status === 'accepted'
   const finished = completed || accepted
@@ -35,7 +37,18 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
     || clientRules.moveItems !== 'none'
     || Boolean(clientRules.doNotTouch.trim())
 
-  const active: ChecklistItem[] = useMemo(() => checklist.filter((s) => s.included), [checklist])
+  const active: ChecklistItem[] = useMemo(() => checklist.filter((s) => s.sectionCode == null && s.included), [checklist])
+  const sections = useMemo(() => groupIntoSections(checklist, photos), [checklist, photos])
+  const galleryPhotos = useMemo(() => aggregateGalleryPhotos(sections, photos), [sections, photos])
+
+  function toggleSection(code: SectionCode) {
+    setOpenSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }
 
   async function accept() {
     setAccepting(true)
@@ -50,7 +63,7 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
     setStatus('accepted')
   }
 
-  const { total, done, percent } = countProgress(active)
+  const { total, done } = countProgress(checklist)
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
@@ -84,39 +97,61 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
           </dl>
         </section>
 
-        {/* Active services (read-only live status) */}
-        <section className="mt-6">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Услуги уборки
-          </h2>
-          <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
-            {active.map((item, idx) => (
-              <li
-                key={item.id}
-                className={cn(
-                  'flex min-h-[56px] items-center gap-3 px-4 py-3',
-                  idx > 0 && 'border-t border-border',
-                )}
-              >
-                {item.done ? (
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="size-4" />
-                  </span>
-                ) : (
-                  <Circle className="size-6 shrink-0 text-border" strokeWidth={2} />
-                )}
-                <span
+        {/* Ход уборки: base-cleaning sections, read-only accordions */}
+        {sections.length > 0 && (
+          <section className="mt-6">
+            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Ход уборки
+            </h2>
+            <div className="mt-2 space-y-3">
+              {sections.map((section) => (
+                <ClientSectionCard
+                  key={section.code}
+                  section={section}
+                  open={openSections.has(section.code)}
+                  onToggleOpen={() => toggleSection(section.code)}
+                  onViewPhoto={setViewer}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Add-on services (read-only, unchanged legacy list) */}
+        {active.length > 0 && (
+          <section className="mt-6">
+            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {sections.length > 0 ? 'Дополнительные услуги' : 'Услуги уборки'}
+            </h2>
+            <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
+              {active.map((item, idx) => (
+                <li
+                  key={item.id}
                   className={cn(
-                    'text-[15px] leading-snug',
-                    item.done ? 'font-medium text-foreground' : 'text-muted-foreground',
+                    'flex min-h-[56px] items-center gap-3 px-4 py-3',
+                    idx > 0 && 'border-t border-border',
                   )}
                 >
-                  {item.label}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+                  {item.done ? (
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-4" />
+                    </span>
+                  ) : (
+                    <Circle className="size-6 shrink-0 text-border" strokeWidth={2} />
+                  )}
+                  <span
+                    className={cn(
+                      'text-[15px] leading-snug',
+                      item.done ? 'font-medium text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Client rules summary (read-only) */}
         <section className="mt-6">
@@ -149,21 +184,26 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
           </div>
         </section>
 
-        {/* Photos */}
+        {/* Photos: same photo records, ordered rooms→kitchen→bathroom→completion */}
         <section className="mt-6">
           <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Фото уборки
           </h2>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            {photos.map((p) => (
+            {galleryPhotos.map((p) => (
               <button
-                key={p.src}
+                key={p.id ?? p.src}
                 type="button"
                 onClick={() => setViewer(p)}
-                className="aspect-square overflow-hidden rounded-xl border border-border"
+                className="overflow-hidden rounded-xl border border-border text-left"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.src || '/placeholder.svg'} alt={p.alt} className="size-full object-cover" />
+                <span className="block aspect-square overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.src || '/placeholder.svg'} alt={p.alt} className="size-full object-cover" />
+                </span>
+                {p.sectionCode && (
+                  <span className="block truncate px-1.5 py-1 text-[11px] text-muted-foreground">{SECTION_TITLES[p.sectionCode]}</span>
+                )}
               </button>
             ))}
           </div>
@@ -204,6 +244,72 @@ export function ClientView({ cleaning, checklist, clientRules, photos }: ClientV
         <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />
       )}
     </div>
+  )
+}
+
+function ClientSectionCard({
+  section,
+  open,
+  onToggleOpen,
+  onViewPhoto,
+}: {
+  section: ChecklistSection
+  open: boolean
+  onToggleOpen: () => void
+  onViewPhoto: (photo: Photo) => void
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left"
+        aria-expanded={open}
+      >
+        <span className="flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="block text-base font-semibold tracking-tight">{section.title}</span>
+            {section.total > 0 && section.done === section.total && <Check className="size-4 text-primary" />}
+          </span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            {section.done} из {section.total} выполнено
+          </span>
+          <ProgressBar percent={section.percent} className="mt-2" />
+        </span>
+        <ChevronDown className={cn('mt-1 size-5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          <ul>
+            {section.items.map((item, idx) => (
+              <li key={item.id} className={cn('flex min-h-[48px] items-center gap-3 px-5 py-2', idx > 0 && 'border-t border-border')}>
+                {item.done ? (
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-4" />
+                  </span>
+                ) : (
+                  <Circle className="size-6 shrink-0 text-border" strokeWidth={2} />
+                )}
+                <span className={cn('text-[15px] leading-snug', item.done ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {section.photos.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 p-4">
+              {section.photos.map((photo) => (
+                <button key={photo.id ?? photo.src} type="button" onClick={() => onViewPhoto(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   )
 }
 

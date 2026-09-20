@@ -34,7 +34,8 @@ import { formatCleaningDateTime, formatCleaningTime } from '@/lib/date-format'
 import { getCleaningStatusLabel } from '@/lib/cleaning-status'
 import { formatRequestedDate } from '@/lib/telegram-order-format'
 import { cabinetOptions, countProgress, moveOptions } from '@/lib/mock-data'
-import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo } from '@/lib/types'
+import { aggregateGalleryPhotos, groupIntoSections, SECTION_TITLES, type ChecklistSection } from '@/lib/checklist-sections'
+import type { ChecklistItem, Cleaning, CleaningStatus, ClientRules, Photo, SectionCode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface CleanerViewProps {
@@ -55,8 +56,9 @@ export function CleanerView({
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [viewer, setViewer] = useState<Photo | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const photoTarget = useRef<string | null>(null)
+  const photoTarget = useRef<{ serviceId: string | null; sectionCode: SectionCode | null }>({ serviceId: null, sectionCode: null })
   const uploadBusy = useRef(false)
+  const [openSections, setOpenSections] = useState<Set<SectionCode>>(new Set())
   const [checklist, setChecklist] = useState<ChecklistItem[]>(initialChecklist)
   const [status, setStatus] = useState<CleaningStatus>(cleaning.status)
   const [completedAt, setCompletedAt] = useState(cleaning.completedAt)
@@ -75,8 +77,20 @@ export function CleanerView({
   const [saveError, setSaveError] = useState(false)
 
   const { total, done, percent } = useMemo(() => countProgress(checklist), [checklist])
-  const active = useMemo(() => checklist.filter((s) => s.included), [checklist])
+  const sections = useMemo(() => groupIntoSections(checklist, photos), [checklist, photos])
+  const pickerItems = useMemo(() => checklist.filter((item) => item.sectionCode == null), [checklist])
+  const active = useMemo(() => pickerItems.filter((s) => s.included), [pickerItems])
   const includedCount = active.length
+  const galleryPhotos = useMemo(() => aggregateGalleryPhotos(sections, photos), [sections, photos])
+
+  function toggleSection(code: SectionCode) {
+    setOpenSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!saveError) return
@@ -121,19 +135,19 @@ export function CleanerView({
     setCompletedAt(result.completedAt ?? completedAt)
   }
 
-  function choosePhoto(serviceId: string | null) {
-    photoTarget.current = serviceId
+  function choosePhoto(serviceId: string | null, sectionCode: SectionCode | null = null) {
+    photoTarget.current = { serviceId, sectionCode }
     fileInput.current?.click()
   }
 
   async function attachPhoto(file: File) {
     if (uploadBusy.current) return
     uploadBusy.current = true
-    const serviceId = photoTarget.current
+    const { serviceId, sectionCode } = photoTarget.current
     setUploading(true)
     setPhotoError(null)
     try {
-      const photo = await uploadCleaningPhoto(file, cleaning.id, serviceId)
+      const photo = await uploadCleaningPhoto(file, cleaning.id, serviceId, sectionCode)
       setPhotos((previous) => [...previous, photo])
       if (serviceId) {
         setChecklist((previous) => previous.map((item) => item.id === serviceId ? { ...item, photo } : item))
@@ -328,7 +342,7 @@ export function CleanerView({
 
           {pickerOpen && (
             <ul className="border-t border-border">
-              {checklist.map((s) => (
+              {pickerItems.map((s) => (
                 <li key={s.id} className="border-b border-border last:border-b-0">
                   <button
                     type="button"
@@ -368,10 +382,35 @@ export function CleanerView({
           <ProgressBar percent={percent} className="mt-4" />
         </section>
 
-        {/* Active checklist */}
+        {/* Base-cleaning sections: compact accordions, photos per section */}
+        {sections.length > 0 && (
+          <section className="mt-6">
+            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Чек-лист уборки
+            </h2>
+            <div className="mt-2 space-y-3">
+              {sections.map((section) => (
+                <SectionCard
+                  key={section.code}
+                  section={section}
+                  open={openSections.has(section.code)}
+                  onToggleOpen={() => toggleSection(section.code)}
+                  onToggleItem={toggleDone}
+                  onAddPhoto={() => choosePhoto(null, section.code)}
+                  onViewPhoto={setViewer}
+                  photoReportEnabled={cleaning.photoReportEnabled}
+                  uploading={uploading}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Add-on services: flat checklist (legacy behaviour, per-item photo/note) */}
+        {(sections.length === 0 || active.length > 0) && (
         <section className="mt-6">
           <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Чек-лист уборки
+            {sections.length > 0 ? 'Дополнительные услуги' : 'Чек-лист уборки'}
           </h2>
           {includedCount === 0 ? (
             <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
@@ -434,7 +473,7 @@ export function CleanerView({
                           alt="Фото услуги"
                           className="size-11 rounded-lg object-cover"
                         />
-                      ) : (
+                      ) : cleaning.photoReportEnabled ? (
                         <button
                           type="button"
                           onClick={() => choosePhoto(item.id)}
@@ -444,7 +483,7 @@ export function CleanerView({
                         >
                           <Camera className="size-5" />
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
@@ -472,19 +511,46 @@ export function CleanerView({
             </ul>
           )}
         </section>
+        )}
+
+        {/* Aggregate gallery: read-only once sections exist, upload happens per section */}
         <section className="mt-6">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Фото уборки</h2>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {photos.map((photo) => (
-              <button key={photo.src} type="button" onClick={() => setViewer(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
-              </button>
-            ))}
-          </div>
-          <Button type="button" variant="outline" disabled={uploading} onClick={() => choosePhoto(null)} className="mt-3 rounded-xl">
-            <Camera className="size-4" /> Добавить фото
-          </Button>
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Все фото</h2>
+          {sections.length > 0 ? (
+            galleryPhotos.length === 0 ? (
+              <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Фотографий нет</p>
+            ) : (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {galleryPhotos.map((photo) => (
+                  <button key={photo.id ?? photo.src} type="button" onClick={() => setViewer(photo)} className="overflow-hidden rounded-xl border border-border text-left">
+                    <span className="block aspect-square overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                    </span>
+                    {photo.sectionCode && (
+                      <span className="block truncate px-1.5 py-1 text-[11px] text-muted-foreground">{SECTION_TITLES[photo.sectionCode]}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {photos.map((photo) => (
+                  <button key={photo.src} type="button" onClick={() => setViewer(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                  </button>
+                ))}
+              </div>
+              {cleaning.photoReportEnabled && (
+                <Button type="button" variant="outline" disabled={uploading} onClick={() => choosePhoto(null)} className="mt-3 rounded-xl">
+                  <Camera className="size-4" /> Добавить фото
+                </Button>
+              )}
+            </>
+          )}
           <input ref={fileInput} type="file" accept="image/*" className="hidden" aria-label="Выбрать фото" onChange={(event) => {
             const file = event.target.files?.[0]
             event.target.value = ''
@@ -506,7 +572,7 @@ export function CleanerView({
           )}
           <Button
             size="lg"
-            disabled={includedCount === 0 || done < total}
+            disabled={total === 0 || done < total}
             onClick={finishCleaning}
             className="h-14 w-full rounded-2xl text-base"
           >
@@ -542,9 +608,21 @@ function CompletedCleaningView({
   onToken: (token: string) => void
 }) {
   const [viewer, setViewer] = useState<Photo | null>(null)
-  const active = checklist.filter((item) => item.included)
+  const [openSections, setOpenSections] = useState<Set<SectionCode>>(new Set())
+  const active = checklist.filter((item) => item.sectionCode == null && item.included)
   const { done, total, percent } = countProgress(checklist)
   const accepted = status === 'accepted'
+  const sections = useMemo(() => groupIntoSections(checklist, photos), [checklist, photos])
+  const galleryPhotos = useMemo(() => aggregateGalleryPhotos(sections, photos), [sections, photos])
+
+  function toggleSection(code: SectionCode) {
+    setOpenSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
@@ -608,11 +686,32 @@ function CompletedCleaningView({
           <ClientRulesDetails clientRules={clientRules} />
         </section>
 
+        {sections.length > 0 && (
+          <section className="mt-6">
+            <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Чек-лист уборки</h2>
+            <div className="mt-2 space-y-3">
+              {sections.map((section) => (
+                <ReadOnlySectionCard
+                  key={section.code}
+                  section={section}
+                  open={openSections.has(section.code)}
+                  onToggleOpen={() => toggleSection(section.code)}
+                  onViewPhoto={setViewer}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="mt-6">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Чек-лист уборки</h2>
-          <p className="mt-1 px-1 text-sm text-muted-foreground">Выполнено: {done} из {total} ({percent}%)</p>
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            {sections.length > 0 ? 'Дополнительные услуги' : 'Чек-лист уборки'}
+          </h2>
+          {sections.length === 0 && <p className="mt-1 px-1 text-sm text-muted-foreground">Выполнено: {done} из {total} ({percent}%)</p>}
           {active.length === 0 ? (
-            <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Услуги не выбраны</p>
+            sections.length === 0 && (
+              <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">Услуги не выбраны</p>
+            )
           ) : (
             <ul className="mt-2 overflow-hidden rounded-2xl border border-border bg-card">
               {active.map((item, index) => (
@@ -642,15 +741,20 @@ function CompletedCleaningView({
         </section>
 
         <section className="mt-6">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Фото уборки</h2>
-          {photos.length === 0 ? (
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Все фото</h2>
+          {galleryPhotos.length === 0 ? (
             <p className="mt-2 rounded-2xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Фотографий нет</p>
           ) : (
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {photos.map((photo) => (
-                <button key={photo.id ?? photo.src} type="button" onClick={() => setViewer(photo)} className="aspect-square overflow-hidden rounded-xl border border-border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo.src || '/placeholder.svg'} alt={photo.alt} className="size-full object-cover" />
+              {galleryPhotos.map((photo) => (
+                <button key={photo.id ?? photo.src} type="button" onClick={() => setViewer(photo)} className="overflow-hidden rounded-xl border border-border text-left">
+                  <span className="block aspect-square overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.src || '/placeholder.svg'} alt={photo.alt} className="size-full object-cover" />
+                  </span>
+                  {photo.sectionCode && (
+                    <span className="block truncate px-1.5 py-1 text-[11px] text-muted-foreground">{SECTION_TITLES[photo.sectionCode]}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -662,6 +766,155 @@ function CompletedCleaningView({
 
       {viewer && <PhotoViewer src={viewer.src} alt={viewer.alt} onClose={() => setViewer(null)} />}
     </div>
+  )
+}
+
+function SectionCard({
+  section,
+  open,
+  onToggleOpen,
+  onToggleItem,
+  onAddPhoto,
+  onViewPhoto,
+  photoReportEnabled,
+  uploading,
+}: {
+  section: ChecklistSection
+  open: boolean
+  onToggleOpen: () => void
+  onToggleItem: (id: string) => void
+  onAddPhoto: () => void
+  onViewPhoto: (photo: Photo) => void
+  photoReportEnabled: boolean
+  uploading: boolean
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left"
+        aria-expanded={open}
+      >
+        <span className="flex-1">
+          <span className="block text-base font-semibold tracking-tight">{section.title}</span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            {section.done} из {section.total} выполнено
+          </span>
+          <ProgressBar percent={section.percent} className="mt-2" />
+        </span>
+        <ChevronDown className={cn('mt-1 size-5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          <ul>
+            {section.items.map((item, idx) => (
+              <li key={item.id} className={cn(idx > 0 && 'border-t border-border')}>
+                <button
+                  type="button"
+                  onClick={() => onToggleItem(item.id)}
+                  aria-pressed={item.done}
+                  className="flex min-h-[52px] w-full items-center gap-3 px-5 py-2 text-left"
+                >
+                  <span
+                    className={cn(
+                      'flex size-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors',
+                      item.done ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background',
+                    )}
+                  >
+                    {item.done && <Check className="size-4" />}
+                  </span>
+                  <span className={cn('text-[15px] leading-snug', item.done && 'text-muted-foreground line-through')}>
+                    {item.label}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {photoReportEnabled && (
+            <div className="border-t border-border px-5 py-4">
+              {section.photos.length > 0 && (
+                <div className="mb-3 grid grid-cols-4 gap-2">
+                  {section.photos.map((photo) => (
+                    <button key={photo.id ?? photo.src} type="button" onClick={() => onViewPhoto(photo)} className="aspect-square overflow-hidden rounded-lg border border-border">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={onAddPhoto} className="rounded-xl">
+                <Camera className="size-4" /> Добавить фото
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ReadOnlySectionCard({
+  section,
+  open,
+  onToggleOpen,
+  onViewPhoto,
+}: {
+  section: ChecklistSection
+  open: boolean
+  onToggleOpen: () => void
+  onViewPhoto: (photo: Photo) => void
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left"
+        aria-expanded={open}
+      >
+        <span className="flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="block text-base font-semibold tracking-tight">{section.title}</span>
+            {section.total > 0 && section.done === section.total && <Check className="size-4 text-primary" />}
+          </span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            {section.done} из {section.total} выполнено
+          </span>
+          <ProgressBar percent={section.percent} className="mt-2" />
+        </span>
+        <ChevronDown className={cn('mt-1 size-5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          <ul>
+            {section.items.map((item, idx) => (
+              <li key={item.id} className={cn('flex min-h-[48px] items-center gap-3 px-5 py-2', idx > 0 && 'border-t border-border')}>
+                <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full', item.done ? 'bg-primary text-primary-foreground' : 'border-2 border-border text-muted-foreground')}>
+                  {item.done && <Check className="size-4" />}
+                </span>
+                <span className={cn('text-[15px] leading-snug', item.done ? 'text-foreground' : 'text-muted-foreground')}>
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {section.photos.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 p-4">
+              {section.photos.map((photo) => (
+                <button key={photo.id ?? photo.src} type="button" onClick={() => onViewPhoto(photo)} className="aspect-square overflow-hidden rounded-lg border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   )
 }
 
