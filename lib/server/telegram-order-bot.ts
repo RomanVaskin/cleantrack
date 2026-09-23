@@ -45,6 +45,7 @@ type SessionData = {
   windows?: boolean
   ironing?: boolean
   balcony?: boolean
+  generalCleaning?: boolean
   other?: boolean
   photoReportEnabled?: boolean
   windowsCount?: number
@@ -96,6 +97,7 @@ type CreatedOrder = {
   windowsCount: number
   ironingHours: number
   balcony: boolean
+  generalCleaning: boolean
   photoReportEnabled: boolean
   otherRequest: string | null
   requestedDate: string
@@ -113,9 +115,9 @@ const startKeyboard: TelegramReplyMarkup = {
 
 const roomsKeyboard: TelegramReplyMarkup = {
   inline_keyboard: [
-    [{ text: '1 комната — 4 000 ₽', callback_data: 'room:1' }],
-    [{ text: '2 комнаты — 4 500 ₽', callback_data: 'room:2' }],
-    [{ text: '3 комнаты — 5 000 ₽', callback_data: 'room:3' }],
+    [{ text: '1 комната — до 45 м² — 4 000 ₽', callback_data: 'room:1' }],
+    [{ text: '2 комнаты — до 75 м² — 4 500 ₽', callback_data: 'room:2' }],
+    [{ text: '3 комнаты — до 100 м² — 5 000 ₽', callback_data: 'room:3' }],
     [{ text: '4 комнаты — 5 500 ₽', callback_data: 'room:4' }],
   ],
 }
@@ -197,6 +199,7 @@ function extrasKeyboard(data: SessionData): TelegramReplyMarkup {
       [{ text: `${mark(data.windows)} Окна — 800 ₽ / окно`, callback_data: 'extra:windows' }],
       [{ text: `${mark(data.ironing)} Глажка — 800 ₽ / час`, callback_data: 'extra:ironing' }],
       [{ text: `${mark(data.balcony)} Балкон / лоджия — 1 000 ₽`, callback_data: 'extra:balcony' }],
+      [{ text: `${mark(data.generalCleaning)} Генеральная уборка — +2 000 ₽`, callback_data: 'extra:general-cleaning' }],
       [{ text: `${mark(data.other)} Другое`, callback_data: 'extra:other' }],
       [{ text: 'Готово', callback_data: 'extra:done' }],
     ],
@@ -225,6 +228,7 @@ function calculatePrice(data: SessionData) {
   const extrasPrice = (data.windowsCount ?? 0) * 800
     + (data.ironingHours ?? 0) * 800
     + (data.balcony ? 1000 : 0)
+    + (data.generalCleaning ? 2000 : 0)
   return { basePrice, extrasPrice, totalPrice: basePrice + extrasPrice }
 }
 
@@ -243,6 +247,7 @@ function confirmationText(data: SessionData): string {
     lines.push(`${countLabel(data.ironingHours, 'час глажки', 'часа глажки', 'часов глажки')} — ${formatPrice(data.ironingHours * 800)} ₽`)
   }
   if (data.balcony) lines.push('Балкон / лоджия — 1 000 ₽')
+  if (data.generalCleaning) lines.push('Генеральная уборка — 2 000 ₽')
   lines.push('', `Предварительная стоимость: ${formatPrice(totalPrice)} ₽`, '')
   if (data.otherRequest) {
     lines.push('Дополнительно:', data.otherRequest, '', 'Стоимость этой услуги будет согласована отдельно.', '')
@@ -284,6 +289,7 @@ function adminOrderText(order: CreatedOrder): string {
     lines.push(`Глажка: ${countLabel(order.ironingHours, 'час', 'часа', 'часов')} — ${formatPrice(order.ironingHours * 800)} ₽`)
   }
   if (order.balcony) lines.push('Балкон / лоджия — 1 000 ₽')
+  if (order.generalCleaning) lines.push('Генеральная уборка — 2 000 ₽')
   lines.push('', `Фотоотчёт: ${order.photoReportEnabled ? 'Да' : 'Нет'}`)
   if (order.otherRequest) {
     lines.push('', 'Дополнительно:', order.otherRequest, 'Стоимость согласуется отдельно.')
@@ -681,16 +687,16 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
       const insertedOrder = await client.query<{ id: string }>(
         `INSERT INTO orders
           (number, telegram_chat_id, telegram_username, client_name, client_phone,
-           address, rooms, windows_count, ironing_hours, balcony, photo_report_enabled,
+           address, rooms, windows_count, ironing_hours, balcony, general_cleaning, photo_report_enabled,
            other_request, requested_date, requested_time, cabinets_rule, personal_items_rule,
            do_not_touch, base_price, extras_price, total_price, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                 $16, $17, $18, $19, $20, 'new')
+                 $16, $17, $18, $19, $20, $21, 'new')
          RETURNING id`,
         [
           number, chatId, callback.from.username ?? null, data.clientName, data.clientPhone,
           data.address, data.rooms, data.windowsCount ?? 0, data.ironingHours ?? 0,
-          Boolean(data.balcony), data.photoReportEnabled, data.otherRequest ?? null,
+          Boolean(data.balcony), Boolean(data.generalCleaning), data.photoReportEnabled, data.otherRequest ?? null,
           data.requestedDate, data.requestedTime, data.cabinetsRule, data.personalItemsRule,
           data.doNotTouch?.trim() || null, basePrice, extrasPrice, totalPrice,
         ],
@@ -706,6 +712,7 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
         windowsCount: data.windowsCount ?? 0,
         ironingHours: data.ironingHours ?? 0,
         balcony: Boolean(data.balcony),
+        generalCleaning: Boolean(data.generalCleaning),
         photoReportEnabled: data.photoReportEnabled,
         otherRequest: data.otherRequest ?? null,
         requestedDate: data.requestedDate,
@@ -753,8 +760,8 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
     if (action.startsWith('extra:') && session.state === 'choosing_extras') {
       const extra = action.slice(6)
       if (extra === 'done') return nextAfterExtras(client, chatId, session.data)
-      if (!['windows', 'ironing', 'balcony', 'other'].includes(extra)) return { restart: true as const }
-      const key = extra as 'windows' | 'ironing' | 'balcony' | 'other'
+      if (!['windows', 'ironing', 'balcony', 'general-cleaning', 'other'].includes(extra)) return { restart: true as const }
+      const key = extra === 'general-cleaning' ? 'generalCleaning' : extra as 'windows' | 'ironing' | 'balcony' | 'other'
       session.data[key] = !session.data[key]
       if (key === 'windows' && !session.data.windows) delete session.data.windowsCount
       if (key === 'ironing' && !session.data.ironing) delete session.data.ironingHours

@@ -222,11 +222,11 @@ async function main() {
     const telegramOrder = (await pool.query(
       `INSERT INTO orders
         (number, telegram_chat_id, client_name, client_phone, address, rooms,
-         photo_report_enabled, requested_date, requested_time, cabinets_rule,
+         general_cleaning, photo_report_enabled, requested_date, requested_time, cabinets_rule,
          personal_items_rule, do_not_touch, base_price, extras_price, total_price)
        VALUES ('CT-900001', 42, 'Клиент Telegram', '+79990000000', 'Адрес Telegram', 2,
-               true, '2099-09-25', '10:30–13:30', 'selected', 'agree', 'Документы',
-               4500, 0, 4500)
+               true, true, '2099-09-25', '10:30–13:30', 'selected', 'agree', 'Документы',
+               4500, 2000, 6500)
        RETURNING id`,
     )).rows[0]
     const { confirmTelegramOrder } = require('../lib/data/telegram-orders.ts')
@@ -243,8 +243,9 @@ async function main() {
     })
     // Telegram confirmation always includes 's1' (base cleaning): it now expands into
     // the grouped 25-item checklist instead of a single flat row.
-    assert.equal(telegramData.checklist.length, 25)
-    assert.ok(telegramData.checklist.every(item => item.sectionCode !== null))
+    assert.equal(telegramData.checklist.length, 26)
+    assert.equal(telegramData.checklist.filter(item => item.sectionCode !== null).length, 25)
+    assert.equal(telegramData.checklist.filter(item => item.label === 'Генеральная уборка').length, 1)
     assert.ok((await getCleanerCleanings()).some(cleaning => cleaning.id === created.cleaningId))
     const createdData = await getCleaningData(created.cleaningId)
     assert.equal(createdData.cleaning.client, 'Новый клиент')

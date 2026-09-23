@@ -10,6 +10,7 @@ const answeredCallbacks = []
 const confirmedOrders = []
 const rejectedOrders = []
 const insertedOrders = []
+const editedMarkups = []
 const client = {
   async query(sql, params = []) {
     if (sql.includes('SELECT state, data FROM telegram_sessions')) {
@@ -58,7 +59,7 @@ Module._load = function (id, parent, isMain) {
       sendMessage: async (chatId, text, markup) => { sent.push({ chatId, text, markup }) },
       answerCallbackQuery: async (callbackId, text) => { answeredCallbacks.push({ callbackId, text }) },
       editMessageText: async () => {},
-      editMessageReplyMarkup: async () => {},
+      editMessageReplyMarkup: async (chatId, messageId, markup) => { editedMarkups.push({ chatId, messageId, markup }) },
     }
   }
   if (id.startsWith('@/')) id = path.resolve(__dirname, '..', id.slice(2))
@@ -104,6 +105,51 @@ async function main() {
 
   process.env.TELEGRAM_ADMIN_CHAT_IDS = '99, 100, 99, invalid, , 0100'
   process.env.TELEGRAM_ADMIN_CHAT_ID = '77'
+
+  await callback('order:start')
+  assert.deepEqual(
+    sent.at(-1).markup.inline_keyboard.flat().map(button => button.text),
+    [
+      '1 комната — до 45 м² — 4 000 ₽',
+      '2 комнаты — до 75 м² — 4 500 ₽',
+      '3 комнаты — до 100 м² — 5 000 ₽',
+      '4 комнаты — 5 500 ₽',
+    ],
+  )
+
+  seed('choosing_rooms', {})
+  await callback('room:2')
+  assert.equal(sessions.get(chatId).state, 'choosing_extras')
+  assert.ok(sent.at(-1).markup.inline_keyboard.flat().some(button => button.text === '⬜ Генеральная уборка — +2 000 ₽'))
+  await callback('extra:general-cleaning')
+  await callback('extra:balcony')
+  assert.equal(sessions.get(chatId).data.generalCleaning, true)
+  assert.equal(sessions.get(chatId).data.balcony, true)
+  assert.ok(editedMarkups.at(-1).markup.inline_keyboard.flat().some(button => button.text === '✅ Генеральная уборка — +2 000 ₽'))
+
+  // The add-on survives a module reload because it is stored in telegram_sessions.data.
+  delete require.cache[require.resolve('../lib/server/telegram-order-bot.ts')]
+  bot = require('../lib/server/telegram-order-bot.ts')
+  await callback('extra:windows')
+  assert.equal(sessions.get(chatId).data.generalCleaning, true)
+  assert.equal(sessions.get(chatId).data.windows, true)
+
+  const pricedData = {
+    ...baseData,
+    requestedTime: '09:00–12:00',
+    windowsCount: 2,
+    ironingHours: 1,
+    balcony: true,
+    generalCleaning: true,
+  }
+  seed('choosing_rules_presence', pricedData)
+  await callback('rules:none')
+  const firstSummary = sent.at(-1).text
+  assert.equal((firstSummary.match(/Генеральная уборка — 2 000 ₽/g) ?? []).length, 1)
+  assert.match(firstSummary, /Предварительная стоимость: 9 900 ₽/)
+  seed('choosing_rules_presence', pricedData)
+  await callback('rules:none')
+  assert.match(sent.at(-1).text, /Предварительная стоимость: 9 900 ₽/)
 
   assert.equal(format.normalizeCustomTimeInterval('10:30-13:30'), '10:30–13:30')
   assert.equal(format.normalizeCustomTimeInterval('10:30  –  13:30'), '10:30–13:30')
@@ -168,6 +214,7 @@ async function main() {
 
   seed('awaiting_confirmation', {
     ...baseData,
+    generalCleaning: true,
     requestedTime: '15:00–18:00',
     cabinetsRule: 'selected',
     personalItemsRule: 'agree',
@@ -176,16 +223,21 @@ async function main() {
   await callback('order:submit')
   assert.equal(sessions.has(chatId), false)
   assert.equal(insertedOrders.length, 1)
-  assert.equal(insertedOrders[0][12], '2099-09-25')
-  assert.equal(insertedOrders[0][13], '15:00–18:00')
-  assert.equal(insertedOrders[0][14], 'selected')
-  assert.equal(insertedOrders[0][15], 'agree')
-  assert.equal(insertedOrders[0][16], 'Документы')
+  assert.equal(insertedOrders[0][10], true)
+  assert.equal(insertedOrders[0][13], '2099-09-25')
+  assert.equal(insertedOrders[0][14], '15:00–18:00')
+  assert.equal(insertedOrders[0][15], 'selected')
+  assert.equal(insertedOrders[0][16], 'agree')
+  assert.equal(insertedOrders[0][17], 'Документы')
+  assert.equal(insertedOrders[0][19], 2000)
+  assert.equal(insertedOrders[0][20], 6500)
   const adminNotifications = sent.filter(item => ['99', '100'].includes(String(item.chatId)))
   assert.deepEqual(adminNotifications.map(item => String(item.chatId)), ['99', '100'])
   for (const notification of adminNotifications) {
     assert.match(notification.text, /Время: 15:00–18:00/)
     assert.match(notification.text, /Не трогать: Документы/)
+    assert.match(notification.text, /Генеральная уборка — 2 000 ₽/)
+    assert.match(notification.text, /Предварительная стоимость: 6 500 ₽/)
   }
 
   const orderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'

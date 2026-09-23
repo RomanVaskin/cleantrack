@@ -82,6 +82,7 @@ create table if not exists orders (
   windows_count integer not null default 0,
   ironing_hours integer not null default 0,
   balcony boolean not null default false,
+  general_cleaning boolean not null default false,
   photo_report_enabled boolean not null default false,
   other_request text,
   requested_date date not null,

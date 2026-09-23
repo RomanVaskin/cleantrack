@@ -18,6 +18,7 @@ interface TelegramOrderRow {
   windows_count: number
   ironing_hours: number
   balcony: boolean
+  general_cleaning: boolean
   other_request: string | null
   photo_report_enabled: boolean
   status: string
@@ -59,7 +60,7 @@ export async function confirmTelegramOrder(orderId: string): Promise<ConfirmTele
     return await withTransaction(pool, async (client): Promise<ConfirmTelegramOrderResult> => {
       const orderResult = await client.query<TelegramOrderRow>(
         `SELECT id, number, telegram_chat_id, client_name, client_phone, address,
-                windows_count, ironing_hours, balcony, other_request,
+                windows_count, ironing_hours, balcony, general_cleaning, other_request,
                 photo_report_enabled, status, cleaning_id, requested_date, requested_time,
                 cabinets_rule, personal_items_rule, do_not_touch
          FROM orders WHERE id = $1 FOR UPDATE`,
@@ -92,6 +93,7 @@ export async function confirmTelegramOrder(orderId: string): Promise<ConfirmTele
         's1',
         ...(order.windows_count > 0 ? ['s7'] : []),
         ...(order.ironing_hours > 0 ? ['s3'] : []),
+        ...(order.general_cleaning ? ['s13'] : []),
       ]
       const servicesResult = await client.query<{ id: string; code: string }>(
         'SELECT id, code FROM services WHERE code = ANY($1::text[])',
@@ -112,6 +114,9 @@ export async function confirmTelegramOrder(orderId: string): Promise<ConfirmTele
           id: servicesByCode.get('s3')!,
           note: countLabel(order.ironing_hours, 'час', 'часа', 'часов'),
         })
+      }
+      if (order.general_cleaning) {
+        services.push({ id: servicesByCode.get('s13')! })
       }
 
       const cleaning = await createCleaningRecord(client, {
@@ -157,7 +162,7 @@ export async function rejectTelegramOrder(orderId: string): Promise<RejectTelegr
     return await withTransaction(pool, async (client): Promise<RejectTelegramOrderResult> => {
       const result = await client.query<TelegramOrderRow>(
         `SELECT id, number, telegram_chat_id, client_name, client_phone, address,
-                windows_count, ironing_hours, balcony, other_request,
+                windows_count, ironing_hours, balcony, general_cleaning, other_request,
                 photo_report_enabled, status, cleaning_id, requested_date, requested_time,
                 cabinets_rule, personal_items_rule, do_not_touch
          FROM orders WHERE id = $1 FOR UPDATE`,
