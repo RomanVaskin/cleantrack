@@ -83,6 +83,7 @@ export type TelegramUpdate = {
 
 const ROOM_PRICES: Record<number, number> = { 1: 4000, 2: 4500, 3: 5000, 4: 5500 }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const TELEGRAM_CHAT_ID_PATTERN = /^-?\d+$/
 const DEFAULT_BASE_URL = 'https://cleantrack.ru'
 
 type CreatedOrder = {
@@ -301,15 +302,36 @@ function adminOrderKeyboard(orderId: string): TelegramReplyMarkup {
   }
 }
 
+export function getTelegramAdminChatIds(): string[] {
+  const configured = process.env.TELEGRAM_ADMIN_CHAT_IDS !== undefined
+    ? process.env.TELEGRAM_ADMIN_CHAT_IDS
+    : process.env.TELEGRAM_ADMIN_CHAT_ID ?? ''
+
+  const chatIds = configured
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => TELEGRAM_CHAT_ID_PATTERN.test(value))
+    .map(Number)
+    .filter((value) => Number.isSafeInteger(value) && value !== 0)
+    .map(String)
+
+  return [...new Set(chatIds)]
+}
+
 async function notifyAdminOfNewOrder(order: CreatedOrder): Promise<void> {
-  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim()
-  if (!adminChatId) {
+  const adminChatIds = getTelegramAdminChatIds()
+  if (adminChatIds.length === 0) {
     console.warn('[telegram-webhook] Admin chat is not configured')
     return
   }
-  try {
-    await sendMessage(adminChatId, adminOrderText(order), adminOrderKeyboard(order.id))
-  } catch {
+  const deliveryResults = await Promise.allSettled(
+    adminChatIds.map((chatId) => sendMessage(
+      chatId,
+      adminOrderText(order),
+      adminOrderKeyboard(order.id),
+    )),
+  )
+  if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
     console.warn('[telegram-webhook] Failed to notify admin')
   }
 }
@@ -346,11 +368,12 @@ async function handleAdminCallback(
   orderId: string,
 ): Promise<void> {
   const message = callback.message
-  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim()
-  if (!message || !adminChatId || String(message.chat.id) !== String(adminChatId)) {
+  const adminChatIds = getTelegramAdminChatIds()
+  if (!message || !adminChatIds.includes(String(message.chat.id))) {
     await safeAnswerCallback(callback.id, 'Недоступно.')
     return
   }
+  const adminChatId = String(message.chat.id)
   if (!UUID_PATTERN.test(orderId)) {
     await safeAnswerCallback(callback.id, 'Заявка не найдена.')
     return

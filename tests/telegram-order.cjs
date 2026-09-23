@@ -6,6 +6,9 @@ const ts = require('typescript')
 
 const sessions = new Map()
 const sent = []
+const answeredCallbacks = []
+const confirmedOrders = []
+const rejectedOrders = []
 const insertedOrders = []
 const client = {
   async query(sql, params = []) {
@@ -40,14 +43,20 @@ Module._load = function (id, parent, isMain) {
   }
   if (id === '@/lib/data/telegram-orders') {
     return {
-      confirmTelegramOrder: async () => ({ kind: 'error' }),
-      rejectTelegramOrder: async () => ({ kind: 'error' }),
+      confirmTelegramOrder: async orderId => {
+        confirmedOrders.push(orderId)
+        return { kind: 'error' }
+      },
+      rejectTelegramOrder: async orderId => {
+        rejectedOrders.push(orderId)
+        return { kind: 'error' }
+      },
     }
   }
   if (id === '@/lib/server/telegram-api') {
     return {
       sendMessage: async (chatId, text, markup) => { sent.push({ chatId, text, markup }) },
-      answerCallbackQuery: async () => {},
+      answerCallbackQuery: async (callbackId, text) => { answeredCallbacks.push({ callbackId, text }) },
       editMessageText: async () => {},
       editMessageReplyMarkup: async () => {},
     }
@@ -79,6 +88,23 @@ const message = text => bot.handleTelegramUpdate({ message: { message_id: 8, cha
 const seed = (state, data = baseData) => sessions.set(chatId, { state, data: structuredClone(data) })
 
 async function main() {
+  const originalAdminChatIds = process.env.TELEGRAM_ADMIN_CHAT_IDS
+  const originalAdminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
+
+  process.env.TELEGRAM_ADMIN_CHAT_IDS = ' 99, 100, 99, , invalid, 00100, -200, 0, 1.5, 9007199254740992 '
+  process.env.TELEGRAM_ADMIN_CHAT_ID = '77'
+  assert.deepEqual(bot.getTelegramAdminChatIds(), ['99', '100', '-200'])
+
+  delete process.env.TELEGRAM_ADMIN_CHAT_IDS
+  process.env.TELEGRAM_ADMIN_CHAT_ID = ' 77 '
+  assert.deepEqual(bot.getTelegramAdminChatIds(), ['77'])
+
+  process.env.TELEGRAM_ADMIN_CHAT_IDS = '  '
+  assert.deepEqual(bot.getTelegramAdminChatIds(), [])
+
+  process.env.TELEGRAM_ADMIN_CHAT_IDS = '99, 100, 99, invalid, , 0100'
+  process.env.TELEGRAM_ADMIN_CHAT_ID = '77'
+
   assert.equal(format.normalizeCustomTimeInterval('10:30-13:30'), '10:30–13:30')
   assert.equal(format.normalizeCustomTimeInterval('10:30  –  13:30'), '10:30–13:30')
   for (const value of ['24:00–13:00', '10:60–13:00', '13:30–10:30', '10:30–10:30', 'bad']) {
@@ -140,7 +166,6 @@ async function main() {
   await callback('do-not-touch:none')
   assert.equal(sessions.get(chatId).data.doNotTouch, '')
 
-  process.env.TELEGRAM_ADMIN_CHAT_ID = '99'
   seed('awaiting_confirmation', {
     ...baseData,
     requestedTime: '15:00–18:00',
@@ -156,9 +181,30 @@ async function main() {
   assert.equal(insertedOrders[0][14], 'selected')
   assert.equal(insertedOrders[0][15], 'agree')
   assert.equal(insertedOrders[0][16], 'Документы')
-  const admin = sent.find(item => String(item.chatId) === '99')
-  assert.match(admin.text, /Время: 15:00–18:00/)
-  assert.match(admin.text, /Не трогать: Документы/)
+  const adminNotifications = sent.filter(item => ['99', '100'].includes(String(item.chatId)))
+  assert.deepEqual(adminNotifications.map(item => String(item.chatId)), ['99', '100'])
+  for (const notification of adminNotifications) {
+    assert.match(notification.text, /Время: 15:00–18:00/)
+    assert.match(notification.text, /Не трогать: Документы/)
+  }
+
+  const orderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const adminCallback = (adminChatId, action) => bot.handleTelegramUpdate({
+    callback_query: {
+      id: `admin-${adminChatId}-${action}`,
+      data: `admin:${action}:${orderId}`,
+      from: { username: 'admin' },
+      message: { message_id: 9, chat: { id: adminChatId } },
+    },
+  })
+  await adminCallback(99, 'confirm')
+  await adminCallback(100, 'reject')
+  assert.deepEqual(confirmedOrders, [orderId])
+  assert.deepEqual(rejectedOrders, [orderId])
+
+  await adminCallback(101, 'confirm')
+  assert.deepEqual(confirmedOrders, [orderId])
+  assert.equal(answeredCallbacks.at(-1).text, 'Недоступно.')
 
   const clientView = fs.readFileSync(path.join(__dirname, '../app/client/client-view.tsx'), 'utf8')
   const cleanerView = fs.readFileSync(path.join(__dirname, '../app/cleaner/cleaner-view.tsx'), 'utf8')
@@ -167,7 +213,11 @@ async function main() {
   assert.match(cleanerView, /clientRules\.doNotTouch &&/)
   const cleaningsSource = fs.readFileSync(path.join(__dirname, '../lib/data/cleanings.ts'), 'utf8')
   assert.doesNotMatch(cleaningsSource, /const clientRules:[\s\S]{0,500}: mockClientRules/)
-  console.log('PASS: Telegram time, rules, persisted sessions, summaries, order fields and tracker wiring')
+  if (originalAdminChatIds === undefined) delete process.env.TELEGRAM_ADMIN_CHAT_IDS
+  else process.env.TELEGRAM_ADMIN_CHAT_IDS = originalAdminChatIds
+  if (originalAdminChatId === undefined) delete process.env.TELEGRAM_ADMIN_CHAT_ID
+  else process.env.TELEGRAM_ADMIN_CHAT_ID = originalAdminChatId
+  console.log('PASS: Telegram admin IDs, time, rules, persisted sessions, summaries, order fields and tracker wiring')
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1 })
