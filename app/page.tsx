@@ -90,7 +90,7 @@ function Header() {
         <Logo />
         <nav className="hidden items-center gap-7 lg:flex">
           {NAV_LINKS.map((link) => (
-            <a key={link.href} href={link.href} className="text-sm text-muted-foreground hover:text-foreground">
+            <a key={link.href} href={link.href} className="text-sm text-foreground/80 hover:text-foreground">
               {link.label}
             </a>
           ))}
@@ -100,7 +100,7 @@ function Header() {
             href={TELEGRAM_CONTACT_URL}
             target="_blank"
             rel="noreferrer"
-            className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+            className="hidden text-sm text-foreground/90 hover:text-foreground sm:inline"
           >
             Заказать
           </a>
