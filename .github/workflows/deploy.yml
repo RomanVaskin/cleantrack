@@ -78,10 +78,12 @@ jobs:
           BEGET_PORT: ${{ secrets.BEGET_PORT }}
         run: |
           set -euo pipefail
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p $BEGET_PORT"
+          # scp takes the port via -P (uppercase); ssh takes it via -p (lowercase) — not
+          # interchangeable, so this step gets its own SCP_OPTS rather than reusing SSH_OPTS.
+          SCP_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P $BEGET_PORT"
           REMOTE_ARCHIVE="/tmp/cleantrack-deploy-${{ github.sha }}.tar.gz"
           echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
-          scp $SSH_OPTS deploy.tar.gz "$BEGET_USER@$BEGET_HOST:$REMOTE_ARCHIVE"
+          scp $SCP_OPTS deploy.tar.gz "$BEGET_USER@$BEGET_HOST:$REMOTE_ARCHIVE"
 
       # No heredoc here on purpose: a multi-line remote command is passed as a single quoted
       # argument to `ssh ... bash -lc "..."` instead, so there is no separate terminator line
