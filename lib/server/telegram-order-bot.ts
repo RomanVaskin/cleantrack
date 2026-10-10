@@ -4,6 +4,15 @@ import type { PoolClient } from 'pg'
 import { getPostgresPool, withTransaction } from '@/lib/db/postgres'
 import { confirmTelegramOrder, rejectTelegramOrder } from '@/lib/data/telegram-orders'
 import {
+  createReferralPartner,
+  getActiveReferralPartnerByCode,
+  getActiveReferralPartnerId,
+  getReferralPartnerStatsById,
+  listReferralPartnersWithStats,
+  type ReferralPartnerDetail,
+} from '@/lib/data/referral-partners'
+import { TELEGRAM_CONTACT_URL } from '@/lib/home-content'
+import {
   ANY_TIME,
   TIME_INTERVALS,
   formatRequestedDate,
@@ -39,6 +48,7 @@ type SessionState =
   | 'choosing_personal_items_rule'
   | 'awaiting_do_not_touch'
   | 'awaiting_confirmation'
+  | 'admin_awaiting_referral_name'
 
 type SessionData = {
   rooms?: number
@@ -59,6 +69,7 @@ type SessionData = {
   cabinetsRule?: CabinetRule
   personalItemsRule?: PersonalItemsRule
   doNotTouch?: string
+  referralPartnerId?: string
 }
 
 type Session = { state: SessionState; data: SessionData }
@@ -190,6 +201,13 @@ const personalItemsKeyboard: TelegramReplyMarkup = {
 
 const doNotTouchKeyboard: TelegramReplyMarkup = {
   inline_keyboard: [[{ text: 'Ничего', callback_data: 'do-not-touch:none' }]],
+}
+
+const referralsMenuKeyboard: TelegramReplyMarkup = {
+  inline_keyboard: [
+    [{ text: '📋 Список рефералов', callback_data: 'refadmin:list' }],
+    [{ text: '➕ Создать реферала', callback_data: 'refadmin:new' }],
+  ],
 }
 
 function extrasKeyboard(data: SessionData): TelegramReplyMarkup {
@@ -360,6 +378,51 @@ function cleanTrackUrl(path: string): string {
   return new URL(path.replace(/^\//, ''), cleanTrackBaseUrl()).toString()
 }
 
+function referralPartnerCreatedText(partner: { name: string; code: string; accessToken: string }): string {
+  return [
+    `Партнёр: ${partner.name}`,
+    '',
+    'Для клиентов через Telegram:',
+    `${TELEGRAM_CONTACT_URL}?start=ref_${partner.code}`,
+    '',
+    'Для клиентов через сайт:',
+    cleanTrackUrl(`/r/${partner.code}`),
+    '',
+    'Статистика партнёра:',
+    cleanTrackUrl(`/partner/${partner.accessToken}`),
+  ].join('\n')
+}
+
+function referralPartnerListText(partners: Awaited<ReturnType<typeof listReferralPartnersWithStats>>): string {
+  if (partners.length === 0) return 'Рефералов пока нет.'
+  return partners
+    .map((partner) => (
+      `${partner.active ? '' : '🚫 '}${partner.name} — ${partner.ordersCount} зак., `
+      + `комиссия ${formatPrice(partner.accruedCommission)} ₽`
+    ))
+    .join('\n')
+}
+
+function referralPartnerDetailText(partner: ReferralPartnerDetail): string {
+  const lines = [
+    `Партнёр: ${partner.name}${partner.active ? '' : ' (отключён)'}`,
+    `Код: ${partner.code}`,
+    `Комиссия: ${partner.commissionPercent}%`,
+    '',
+    `Заказов: ${partner.ordersCount}`,
+    `Сумма всех заказов: ${formatPrice(partner.totalAmount)} ₽`,
+    `Сумма выполненных: ${formatPrice(partner.completedAmount)} ₽`,
+    `Комиссия с выполненных: ${formatPrice(partner.accruedCommission)} ₽`,
+  ]
+  if (partner.orders.length > 0) {
+    lines.push('', 'Последние заказы:')
+    for (const order of partner.orders.slice(0, 15)) {
+      lines.push(`${order.number} · ${formatPrice(order.totalPrice)} ₽ · ${order.statusLabel}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 async function safeAnswerCallback(callbackId: string, text?: string): Promise<void> {
   try {
     await answerCallbackQuery(callbackId, text)
@@ -451,6 +514,57 @@ async function handleAdminCallback(
   }
 }
 
+async function handleReferralAdminCallback(
+  callback: TelegramCallbackQuery,
+  kind: 'list' | 'new' | 'open',
+  arg: string,
+): Promise<void> {
+  const message = callback.message
+  const adminChatIds = getTelegramAdminChatIds()
+  if (!message || !adminChatIds.includes(String(message.chat.id))) {
+    await safeAnswerCallback(callback.id, 'Недоступно.')
+    return
+  }
+  await safeAnswerCallback(callback.id)
+  const chatId = message.chat.id
+
+  if (kind === 'new') {
+    const pool = await requirePool(chatId)
+    if (!pool) return
+    await withTransaction(pool, (client) => (
+      saveSession(client, chatId, { state: 'admin_awaiting_referral_name', data: {} })
+    ))
+    await sendMessage(chatId, 'Введите имя или название партнёра.')
+    return
+  }
+
+  if (kind === 'list') {
+    const partners = await listReferralPartnersWithStats()
+    if (partners.length === 0) {
+      await sendMessage(chatId, 'Рефералов пока нет.')
+      return
+    }
+    await sendMessage(chatId, referralPartnerListText(partners), {
+      inline_keyboard: partners.map((partner) => [{
+        text: `${partner.active ? '' : '🚫 '}${partner.name}`,
+        callback_data: `refadmin:open:${partner.id}`,
+      }]),
+    })
+    return
+  }
+
+  if (!UUID_PATTERN.test(arg)) {
+    await sendMessage(chatId, 'Партнёр не найден.')
+    return
+  }
+  const partner = await getReferralPartnerStatsById(arg)
+  if (!partner) {
+    await sendMessage(chatId, 'Партнёр не найден.')
+    return
+  }
+  await sendMessage(chatId, referralPartnerDetailText(partner))
+}
+
 async function loadSession(client: PoolClient, chatId: number, lock = false): Promise<Session | null> {
   const result = await client.query<{ state: string; data: SessionData }>(
     `SELECT state, data FROM telegram_sessions WHERE chat_id = $1${lock ? ' FOR UPDATE' : ''}`,
@@ -471,8 +585,22 @@ async function saveSession(client: PoolClient, chatId: number, session: Session)
   )
 }
 
-async function resetToRooms(client: PoolClient, chatId: number): Promise<void> {
-  await saveSession(client, chatId, { state: 'choosing_rooms', data: {} })
+/**
+ * Starts a fresh order. referralPartnerId carries attribution into the new session; pass
+ * undefined to keep whatever the chat's current session already has (e.g. "Изменить заказ"
+ * restarting mid-flow), or an explicit null/id to set it from a /start deep link.
+ */
+async function resetToRooms(
+  client: PoolClient,
+  chatId: number,
+  referralPartnerId?: string | null,
+): Promise<void> {
+  let id = referralPartnerId
+  if (id === undefined) {
+    const existing = await loadSession(client, chatId)
+    id = existing?.data.referralPartnerId ?? null
+  }
+  await saveSession(client, chatId, { state: 'choosing_rooms', data: id ? { referralPartnerId: id } : {} })
 }
 
 async function askRules(client: PoolClient, chatId: number, data: SessionData) {
@@ -508,13 +636,19 @@ async function nextAfterExtras(client: PoolClient, chatId: number, data: Session
   }
 }
 
-async function start(chatId: number): Promise<void> {
+async function start(chatId: number, referralCode: string | null): Promise<void> {
   const pool = getPostgresPool()
   if (pool) await pool.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
+
+  const partner = referralCode ? await getActiveReferralPartnerByCode(referralCode) : null
+  const keyboard: TelegramReplyMarkup = partner
+    ? { inline_keyboard: [[{ text: 'Заказать уборку', callback_data: `order:start:ref:${partner.id}` }]] }
+    : startKeyboard
+
   await sendMessage(
     chatId,
     'Добро пожаловать в CleanTrack.\n\nЗакажите уборку квартиры за пару минут.',
-    startKeyboard,
+    keyboard,
   )
 }
 
@@ -532,9 +666,19 @@ async function sendRestart(chatId: number): Promise<void> {
 async function handleMessage(message: TelegramMessage): Promise<void> {
   const chatId = message.chat.id
   const text = message.text?.trim() ?? ''
-  if (/^\/start(?:@\w+)?(?:\s|$)/.test(text)) return start(chatId)
+  const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/)
+  if (startMatch) {
+    const payload = startMatch[1]
+    const refMatch = payload?.match(/^ref_([A-Za-z0-9]+)$/)
+    return start(chatId, refMatch ? refMatch[1] : null)
+  }
   if (/^\/myid(?:@\w+)?(?:\s|$)/.test(text)) {
     await sendMessage(chatId, `Ваш Telegram chat_id: ${chatId}`)
+    return
+  }
+  if (/^\/referrals(?:@\w+)?(?:\s|$)/.test(text)) {
+    if (!getTelegramAdminChatIds().includes(String(chatId))) return
+    await sendMessage(chatId, 'Рефералы', referralsMenuKeyboard)
     return
   }
 
@@ -544,6 +688,14 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const response = await withTransaction(pool, async (client) => {
     const session = await loadSession(client, chatId, true)
     if (!session) return { restart: true as const }
+
+    if (session.state === 'admin_awaiting_referral_name') {
+      if (!getTelegramAdminChatIds().includes(String(chatId))) return { restart: true as const }
+      if (!text || text.length > 120) return { text: 'Введите имя партнёра длиной от 1 до 120 символов.' }
+      const partner = await createReferralPartner(client, text)
+      await client.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
+      return { text: referralPartnerCreatedText(partner) }
+    }
 
     if (session.state === 'awaiting_windows_count') {
       if (!/^\d+$/.test(text) || Number(text) < 6 || !Number.isSafeInteger(Number(text))) {
@@ -646,6 +798,11 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
     )
     return
   }
+  const refAdminAction = action.match(/^refadmin:(list|new|open):?(.*)$/)
+  if (refAdminAction) {
+    await handleReferralAdminCallback(callback, refAdminAction[1] as 'list' | 'new' | 'open', refAdminAction[2])
+    return
+  }
   await safeAnswerCallback(callback.id)
 
   const message = callback.message
@@ -654,8 +811,11 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
   const pool = await requirePool(chatId)
   if (!pool) return
 
-  if (action === 'order:start' || action === 'order:edit') {
-    await withTransaction(pool, (client) => resetToRooms(client, chatId))
+  const startRefMatch = action.match(/^order:start:ref:([0-9a-f-]{36})$/i)
+  if (action === 'order:start' || action === 'order:edit' || startRefMatch) {
+    await withTransaction(pool, (client) => (
+      resetToRooms(client, chatId, startRefMatch ? startRefMatch[1] : undefined)
+    ))
     await sendMessage(chatId, 'Сколько комнат в квартире?', roomsKeyboard)
     return
   }
@@ -678,6 +838,12 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
       ) return null
       const { basePrice, extrasPrice, totalPrice } = calculatePrice(data)
 
+      // Re-checked here (not just at /start) so a partner disabled mid-flow is never attributed.
+      const referralPartnerId = data.referralPartnerId
+        ? await getActiveReferralPartnerId(client, data.referralPartnerId)
+        : null
+      const referralSource = referralPartnerId ? 'telegram' : null
+
       await client.query("SELECT pg_advisory_xact_lock(hashtext('cleantrack_order_number'))")
       const numberResult = await client.query<{ next_number: string }>(
         `SELECT (COALESCE(MAX(substring(number FROM '^CT-([0-9]+)$')::bigint), 0) + 1)::text AS next_number
@@ -689,9 +855,10 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
           (number, telegram_chat_id, telegram_username, client_name, client_phone,
            address, rooms, windows_count, ironing_hours, balcony, general_cleaning, photo_report_enabled,
            other_request, requested_date, requested_time, cabinets_rule, personal_items_rule,
-           do_not_touch, base_price, extras_price, total_price, status)
+           do_not_touch, base_price, extras_price, total_price, status,
+           referral_partner_id, referral_source)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                 $16, $17, $18, $19, $20, $21, 'new')
+                 $16, $17, $18, $19, $20, $21, 'new', $22, $23)
          RETURNING id`,
         [
           number, chatId, callback.from.username ?? null, data.clientName, data.clientPhone,
@@ -699,6 +866,7 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
           Boolean(data.balcony), Boolean(data.generalCleaning), data.photoReportEnabled, data.otherRequest ?? null,
           data.requestedDate, data.requestedTime, data.cabinetsRule, data.personalItemsRule,
           data.doNotTouch?.trim() || null, basePrice, extrasPrice, totalPrice,
+          referralPartnerId, referralSource,
         ],
       )
       await client.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
