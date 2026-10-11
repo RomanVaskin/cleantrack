@@ -11,6 +11,7 @@ import {
   listReferralPartnersWithStats,
   type ReferralPartnerAdminDetail,
 } from '@/lib/data/referral-partners'
+import { syncOrderToCrm } from '@/lib/server/crm-sync'
 import { TELEGRAM_CONTACT_URL } from '@/lib/home-content'
 import {
   ANY_TIME,
@@ -967,6 +968,9 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
           + 'После подтверждения вы получите персональную ссылку CleanTrack, где сможете следить за выполнением уборки.',
       ),
       notifyAdminOfNewOrder(result),
+      // Order is already committed above (the transaction returning `result` has closed) — this
+      // can only add a CRM lead for an order that is already safely saved, never the reverse.
+      syncOrderToCrm(result),
     ])
     if (deliveryResults[0].status === 'rejected') {
       console.warn('[telegram-webhook] Order receipt notification failed')

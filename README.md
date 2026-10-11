@@ -55,6 +55,20 @@ services inside a transaction; both write actions lock the cleaning first.
 The existing selection picker and notes remain local UI state. Changing the selected services locally does not change the database's
 completion requirements.
 
+### OLNOO CRM lead sync
+
+After a Telegram order (`order:submit` in `lib/server/telegram-order-bot.ts`) is saved in
+CleanTrack's own `orders` table, `lib/server/crm-sync.ts` sends the same order as a commercial-
+context lead to the shared OLNOO CRM (`POST /api/leads/inbound` in `olnoo-admin`, `project:
+"cleantrack"`) — name, phone, a short order summary, and the order's own `id` reused as the CRM's
+`lead_tracking_id` so a retried sync can never create a second lead or a second owner
+notification. Requires server-only `OLNOO_CRM_URL`/`OLNOO_CRM_API_KEY` (see `.env.example`);
+without them the sync is skipped (logged) and the CleanTrack order still saves normally — this
+runs strictly after the order is committed and can never affect it. CleanTrack's own `orders`
+table remains the source of truth; the CRM only gets enough context to notify the owner and show
+the lead — no order status, scheduling, or photos are synced. Telegram notification of the owner
+is centralized in `olnoo-admin`'s `createLeadRecord` — not implemented here.
+
 ### Local photo storage
 
 Set server-only `CLEANTRACK_UPLOAD_DIR` to a persistent directory outside the
