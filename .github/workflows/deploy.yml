@@ -56,11 +56,12 @@ jobs:
           rm -rf deploy-stage deploy.tar.gz
           mkdir -p deploy-stage
 
-          # Only prebuilt output + the files `pnpm install --prod` and `next start` actually need
-          # at runtime. No source (app/, components/, lib/, tests/), no .env, no node_modules.
+          # Only prebuilt output + runtime metadata + internal docs are shipped.
+          # No source (app/, components/, lib/, tests/), no .env, no node_modules.
           cp -r .next deploy-stage/.next
           rm -rf deploy-stage/.next/cache
           cp -r public deploy-stage/public
+          cp -r docs deploy-stage/docs
           cp package.json pnpm-lock.yaml pnpm-workspace.yaml next.config.mjs deploy-stage/
 
           tar -czf deploy.tar.gz -C deploy-stage .
@@ -78,17 +79,11 @@ jobs:
           BEGET_PORT: ${{ secrets.BEGET_PORT }}
         run: |
           set -euo pipefail
-          # scp takes the port via -P (uppercase); ssh takes it via -p (lowercase) — not
-          # interchangeable, so this step gets its own SCP_OPTS rather than reusing SSH_OPTS.
           SCP_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P $BEGET_PORT"
           REMOTE_ARCHIVE="/tmp/cleantrack-deploy-${{ github.sha }}.tar.gz"
           echo "REMOTE_ARCHIVE=$REMOTE_ARCHIVE" >> "$GITHUB_ENV"
           scp $SCP_OPTS deploy.tar.gz "$BEGET_USER@$BEGET_HOST:$REMOTE_ARCHIVE"
 
-      # No heredoc here on purpose: a multi-line remote command is passed as a single quoted
-      # argument to `ssh ... bash -lc "..."` instead, so there is no separate terminator line
-      # for a shell heredoc to end on (which, at column 0, is ambiguous for a YAML block scalar
-      # followed by further YAML content and has caused real parser failures).
       - name: Deploy and restart service
         env:
           BEGET_HOST: ${{ secrets.BEGET_HOST }}
@@ -100,16 +95,11 @@ jobs:
           ssh $SSH_OPTS "$BEGET_USER@$BEGET_HOST" bash -lc "
             set -euo pipefail
 
-            # Refuse to proceed if the server's own .env is missing — this deploy must never be
-            # the reason it disappears, so better to fail loudly than extract into a broken env.
             if [ ! -f /opt/cleantrack/.env ]; then
               echo '::error::/opt/cleantrack/.env is missing on the server — aborting deploy' >&2
               exit 1
             fi
 
-            # .next is fully replaced (stale chunks from the previous build must not linger);
-            # the archive never contains .env or anything under /opt/cleantrack-data, so neither
-            # is touched by this extraction.
             rm -rf /opt/cleantrack/.next
             tar -xzf '$REMOTE_ARCHIVE' -C /opt/cleantrack
             rm -f '$REMOTE_ARCHIVE'
@@ -122,8 +112,5 @@ jobs:
             systemctl is-active --quiet cleantrack
           "
 
-      # `systemctl is-active --quiet` already ran on the server above and would have failed this
-      # job already if the service didn't come back up; this step is the external check — does
-      # the public URL actually answer — and fails the job on its own if it doesn't.
       - name: Health check (https://cleantrack.ru)
         run: curl -fsS --retry 3 --retry-delay 3 --max-time 10 -I https://cleantrack.ru
