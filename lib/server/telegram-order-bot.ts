@@ -920,7 +920,8 @@ async function handleCallback(callback: TelegramCallbackQuery): Promise<void> {
     if (action.startsWith('room:') && session.state === 'choosing_rooms') {
       const rooms = Number(action.slice(5))
       if (!ROOM_PRICES[rooms]) return { restart: true as const }
-      const data: SessionData = { rooms }
+      // Referral attribution must survive the whole order flow, not just the first step.
+      const data: SessionData = { rooms, referralPartnerId: session.data.referralPartnerId }
       await saveSession(client, chatId, { state: 'choosing_extras', data })
       return { text: 'Что добавить к уборке?', markup: extrasKeyboard(data) }
     }

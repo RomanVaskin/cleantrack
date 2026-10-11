@@ -224,7 +224,57 @@ async function main() {
   assert.equal(sent.length, sentBefore)
   assert.equal(answeredCallbacks.at(-1).text, 'Недоступно.')
 
-  console.log('PASS: referral attribution via /start, order referral columns, and admin-only referral commands')
+  // Regression test for the room-selection bug: `room:*` used to rebuild session.data from
+  // scratch ({ rooms }), silently dropping referralPartnerId. This drives the REAL callback/
+  // message sequence end to end instead of hand-seeding "awaiting_confirmation" directly,
+  // because that shortcut is exactly what let the bug slip past the other tests above.
+  const fullFlowChat = 601
+  await message(fullFlowChat, '/start ref_VALID1')
+  const fullFlowStartCb = sent.at(-1).markup.inline_keyboard[0][0].callback_data
+  assert.equal(fullFlowStartCb, `order:start:ref:${PARTNER_VALID_ID}`)
+
+  await callback(fullFlowChat, fullFlowStartCb)
+  assert.equal(sessions.get(fullFlowChat).state, 'choosing_rooms')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await callback(fullFlowChat, 'room:2')
+  assert.equal(sessions.get(fullFlowChat).state, 'choosing_extras')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await callback(fullFlowChat, 'extra:done')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_photo_report')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await callback(fullFlowChat, 'photo:no')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_name')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await message(fullFlowChat, 'Пётр')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_phone')
+
+  await message(fullFlowChat, '+79990001122')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_address')
+
+  await message(fullFlowChat, 'Санкт-Петербург')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_date')
+
+  await message(fullFlowChat, '25.12.2099')
+  assert.equal(sessions.get(fullFlowChat).state, 'choosing_time')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await callback(fullFlowChat, 'time:any')
+  assert.equal(sessions.get(fullFlowChat).state, 'choosing_rules_presence')
+
+  await callback(fullFlowChat, 'rules:none')
+  assert.equal(sessions.get(fullFlowChat).state, 'awaiting_confirmation')
+  assert.equal(sessions.get(fullFlowChat).data.referralPartnerId, PARTNER_VALID_ID)
+
+  await callback(fullFlowChat, 'order:submit')
+  const fullFlowInsert = insertedOrders.at(-1)
+  assert.equal(fullFlowInsert[21], PARTNER_VALID_ID)
+  assert.equal(fullFlowInsert[22], 'telegram')
+
+  console.log('PASS: referral attribution via /start, order referral columns, admin-only referral commands, and the full order flow end to end')
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1 })
