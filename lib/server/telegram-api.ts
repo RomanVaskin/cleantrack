@@ -1,7 +1,7 @@
 import 'server-only'
 
 type InlineKeyboardMarkup = {
-  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>
+  inline_keyboard: Array<Array<{ text: string } & ({ callback_data: string } | { url: string })>>
 }
 
 type ReplyKeyboardMarkup = {

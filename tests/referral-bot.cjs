@@ -287,9 +287,10 @@ async function main() {
   assert.equal(fullFlowInsert[22], 'telegram')
 
   // /start partner (the /partners page's "Стать партнёром" CTA): no partner is auto-created,
-  // just a clear reply to the user plus a heads-up to the admin(s) so they can follow up via
-  // the existing /referrals → "Создать реферала" flow. No new session state, no DB write beyond
-  // clearing any stale session, same as plain /start.
+  // just a reply to the user plus a heads-up to the admin chat id(s) so they can follow up via
+  // the existing /referrals → "Создать реферала" flow — this still works even without
+  // TELEGRAM_ADMIN_USERNAME configured (not set anywhere in this file). The username-button
+  // behavior itself (valid/missing/invalid) is covered in tests/partner-contact.cjs.
   const partnerInquiryChat = 701
   await bot.handleTelegramUpdate({
     message: { message_id: 1, chat: { id: partnerInquiryChat }, text: '/start partner', from: { username: 'ivan' } },
