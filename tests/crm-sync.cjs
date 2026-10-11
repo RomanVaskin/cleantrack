@@ -40,6 +40,7 @@ async function main() {
   assert.equal(payload.name, 'Анна')
   assert.equal(payload.phone, '+79990000000')
   assert.equal(payload.source, 'Telegram')
+  assert.equal(payload.channel, 'Telegram')
   assert.equal(payload.service, 'Уборка квартиры')
   assert.equal(payload.lead_tracking_id, order.id)
   assert.match(payload.message, /Заказ CleanTrack: CT-000123/)

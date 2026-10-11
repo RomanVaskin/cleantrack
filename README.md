@@ -60,7 +60,8 @@ completion requirements.
 After a Telegram order (`order:submit` in `lib/server/telegram-order-bot.ts`) is saved in
 CleanTrack's own `orders` table, `lib/server/crm-sync.ts` sends the same order as a commercial-
 context lead to the shared OLNOO CRM (`POST /api/leads/inbound` in `olnoo-admin`, `project:
-"cleantrack"`) — name, phone, a short order summary, and the order's own `id` reused as the CRM's
+"cleantrack"`, `channel: "Telegram"` — the only order entry point this bot has, distinct from
+`source`) — name, phone, a short order summary, and the order's own `id` reused as the CRM's
 `lead_tracking_id` so a retried sync can never create a second lead or a second owner
 notification. Requires server-only `OLNOO_CRM_URL`/`OLNOO_CRM_API_KEY` (see `.env.example`);
 without them the sync is skipped (logged) and the CleanTrack order still saves normally — this
