@@ -661,6 +661,36 @@ async function start(chatId: number, referralCode: string | null): Promise<void>
   )
 }
 
+/**
+ * /start partner: the public /partners page's "Стать партнёром" CTA. No partner is created
+ * automatically — this only replies with a clear next step and nudges the admin to follow up,
+ * reusing the existing /referrals → "Создать реферала" flow (PR #5). No new DB write, no state.
+ */
+async function startPartnerInquiry(chatId: number, username?: string): Promise<void> {
+  const pool = getPostgresPool()
+  if (pool) await pool.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
+
+  await sendMessage(
+    chatId,
+    'Хотите стать партнёром CleanTrack?\n\n'
+      + 'Напишите нам прямо сюда — кратко, кому и как планируете рекомендовать уборку — '
+      + 'и мы создадим для вас персональную партнёрскую ссылку.',
+  )
+
+  const adminChatIds = getTelegramAdminChatIds()
+  if (adminChatIds.length === 0) return
+  const contact = username ? `@${username}` : `chat_id ${chatId}`
+  const deliveryResults = await Promise.allSettled(
+    adminChatIds.map((adminChatId) => sendMessage(
+      adminChatId,
+      `🤝 Запрос на партнёрство от ${contact}.\n\nСоздать партнёра: /referrals → «Создать реферала».`,
+    )),
+  )
+  if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
+    console.warn('[telegram-webhook] Partner inquiry notification failed')
+  }
+}
+
 async function requirePool(chatId: number) {
   const pool = getPostgresPool()
   if (pool) return pool
@@ -678,6 +708,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/)
   if (startMatch) {
     const payload = startMatch[1]
+    if (payload === 'partner') return startPartnerInquiry(chatId, message.from?.username)
     const refMatch = payload?.match(/^ref_([A-Za-z0-9]+)$/)
     return start(chatId, refMatch ? refMatch[1] : null)
   }

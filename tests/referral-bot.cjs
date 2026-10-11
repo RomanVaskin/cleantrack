@@ -286,7 +286,30 @@ async function main() {
   assert.equal(fullFlowInsert[21], PARTNER_VALID_ID)
   assert.equal(fullFlowInsert[22], 'telegram')
 
-  console.log('PASS: referral attribution via /start, order referral columns, admin-only referral commands, and the full order flow end to end')
+  // /start partner (the /partners page's "Стать партнёром" CTA): no partner is auto-created,
+  // just a clear reply to the user plus a heads-up to the admin(s) so they can follow up via
+  // the existing /referrals → "Создать реферала" flow. No new session state, no DB write beyond
+  // clearing any stale session, same as plain /start.
+  const partnerInquiryChat = 701
+  await bot.handleTelegramUpdate({
+    message: { message_id: 1, chat: { id: partnerInquiryChat }, text: '/start partner', from: { username: 'ivan' } },
+  })
+  const userReplies = sent.filter((item) => item.chatId === partnerInquiryChat)
+  assert.equal(userReplies.length, 1)
+  assert.match(userReplies[0].text, /партнёром/i)
+  assert.doesNotMatch(userReplies[0].text, /order:start|choosing_rooms/i)
+  assert.equal(sessions.has(partnerInquiryChat), false)
+
+  const adminNotices = sent.filter((item) => String(item.chatId) === String(adminChat) && /Запрос на партнёрство/.test(item.text))
+  assert.equal(adminNotices.length, 1)
+  assert.match(adminNotices[0].text, /@ivan/)
+  assert.match(adminNotices[0].text, /\/referrals/)
+
+  // A plain /start is still completely unaffected by the "partner" payload handling.
+  await message(partnerInquiryChat, '/start')
+  assert.equal(sent.at(-1).markup.inline_keyboard[0][0].callback_data, 'order:start')
+
+  console.log('PASS: referral attribution via /start, order referral columns, admin-only referral commands, the full order flow end to end, and /start partner')
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1 })
