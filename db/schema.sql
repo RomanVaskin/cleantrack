@@ -70,6 +70,16 @@ create table if not exists telegram_sessions (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists referral_partners (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  code text unique not null,
+  access_token text unique not null,
+  commission_percent integer not null default 10,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   number text not null unique,
@@ -95,5 +105,9 @@ create table if not exists orders (
   total_price integer not null,
   status text not null default 'new',
   cleaning_id uuid unique references cleanings(id) on delete set null,
+  referral_partner_id uuid references referral_partners(id) on delete set null,
+  referral_source text,
   created_at timestamptz not null default now()
 );
+
+create index if not exists orders_referral_partner_id_idx on orders (referral_partner_id);
