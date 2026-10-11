@@ -12,6 +12,7 @@ import {
   type ReferralPartnerAdminDetail,
 } from '@/lib/data/referral-partners'
 import { syncOrderToCrm } from '@/lib/server/crm-sync'
+import { cleanTrackUrl } from '@/lib/cleantrack-url'
 import { TELEGRAM_CONTACT_URL } from '@/lib/home-content'
 import {
   ANY_TIME,
@@ -97,7 +98,6 @@ export type TelegramUpdate = {
 const ROOM_PRICES: Record<number, number> = { 1: 4000, 2: 4500, 3: 5000, 4: 5500 }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const TELEGRAM_CHAT_ID_PATTERN = /^-?\d+$/
-const DEFAULT_BASE_URL = 'https://cleantrack.ru'
 // Real Telegram username rules: 5-32 chars, letters/digits/underscores, must start with a
 // letter. Rejecting anything else keeps an unsafe/malformed env value out of the t.me URL.
 const TELEGRAM_USERNAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{4,31}$/
@@ -368,24 +368,6 @@ async function notifyAdminOfNewOrder(order: CreatedOrder): Promise<void> {
   if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
     console.warn('[telegram-webhook] Failed to notify admin')
   }
-}
-
-function cleanTrackBaseUrl(): string {
-  const configured = process.env.CLEANTRACK_BASE_URL?.trim() || DEFAULT_BASE_URL
-  try {
-    const url = new URL(configured)
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Invalid protocol')
-    url.pathname = '/'
-    url.search = ''
-    url.hash = ''
-    return url.toString()
-  } catch {
-    return `${DEFAULT_BASE_URL}/`
-  }
-}
-
-function cleanTrackUrl(path: string): string {
-  return new URL(path.replace(/^\//, ''), cleanTrackBaseUrl()).toString()
 }
 
 function referralPartnerCreatedText(partner: { name: string; code: string; accessToken: string }): string {
