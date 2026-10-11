@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
   ArrowRight,
@@ -20,6 +21,7 @@ import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { PriceQuiz } from '@/components/home/price-quiz'
 import { TrackerMockup } from '@/components/home/tracker-mockup'
+import { cleanTrackBaseUrl } from '@/lib/cleantrack-url'
 import {
   DIFFERENCE_CLEANTRACK,
   DIFFERENCE_PLAIN,
@@ -62,6 +64,10 @@ const PROOF_CHIPS = [
   { icon: Camera, label: 'Фотоотчёт' },
   { icon: Link2, label: 'Персональная ссылка' },
 ]
+
+export const metadata: Metadata = {
+  alternates: { canonical: cleanTrackBaseUrl().replace(/\/$/, '') },
+}
 
 export default async function HomePage() {
   const referralCode = await getReferralCodeFromCookies()
