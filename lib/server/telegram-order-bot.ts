@@ -97,6 +97,9 @@ const ROOM_PRICES: Record<number, number> = { 1: 4000, 2: 4500, 3: 5000, 4: 5500
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const TELEGRAM_CHAT_ID_PATTERN = /^-?\d+$/
 const DEFAULT_BASE_URL = 'https://cleantrack.ru'
+// Real Telegram username rules: 5-32 chars, letters/digits/underscores, must start with a
+// letter. Rejecting anything else keeps an unsafe/malformed env value out of the t.me URL.
+const TELEGRAM_USERNAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{4,31}$/
 
 type CreatedOrder = {
   id: string
@@ -340,6 +343,12 @@ export function getTelegramAdminChatIds(): string[] {
     .map(String)
 
   return [...new Set(chatIds)]
+}
+
+/** Returns a validated Telegram username (no leading @) for /start partner's contact button, or null. */
+export function getTelegramAdminUsername(): string | null {
+  const configured = process.env.TELEGRAM_ADMIN_USERNAME?.trim() ?? ''
+  return TELEGRAM_USERNAME_PATTERN.test(configured) ? configured : null
 }
 
 async function notifyAdminOfNewOrder(order: CreatedOrder): Promise<void> {
@@ -661,6 +670,48 @@ async function start(chatId: number, referralCode: string | null): Promise<void>
   )
 }
 
+/**
+ * /start partner: the public /partners page's "Стать партнёром" CTA. No partner is created
+ * automatically — this only replies with a clear next step and nudges the admin to follow up,
+ * reusing the existing /referrals → "Создать реферала" flow (PR #5). No new DB write, no state.
+ */
+async function startPartnerInquiry(chatId: number, username?: string): Promise<void> {
+  const pool = getPostgresPool()
+  if (pool) await pool.query('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId])
+
+  // The bot has no inbox for a free-text reply here, so never imply one ("напишите сюда").
+  // Direct contact is a button to the admin's own Telegram username when one is configured;
+  // otherwise a plain fallback that still tells the user their request was seen.
+  const adminUsername = getTelegramAdminUsername()
+  if (adminUsername) {
+    await sendMessage(
+      chatId,
+      'Хотите стать партнёром CleanTrack?\n\n'
+        + 'Напишите администратору — мы создадим для вас персональные ссылки и доступ к статистике.',
+      { inline_keyboard: [[{ text: 'Написать администратору', url: `https://t.me/${adminUsername}` }]] },
+    )
+  } else {
+    await sendMessage(
+      chatId,
+      'Хотите стать партнёром CleanTrack?\n\n'
+        + 'Администратор уже получил уведомление о вашем запросе и свяжется с вами, если это возможно.',
+    )
+  }
+
+  const adminChatIds = getTelegramAdminChatIds()
+  if (adminChatIds.length === 0) return
+  const contact = username ? `@${username}` : `chat_id ${chatId}`
+  const deliveryResults = await Promise.allSettled(
+    adminChatIds.map((adminChatId) => sendMessage(
+      adminChatId,
+      `🤝 Запрос на партнёрство от ${contact}.\n\nСоздать партнёра: /referrals → «Создать реферала».`,
+    )),
+  )
+  if (deliveryResults.some((delivery) => delivery.status === 'rejected')) {
+    console.warn('[telegram-webhook] Partner inquiry notification failed')
+  }
+}
+
 async function requirePool(chatId: number) {
   const pool = getPostgresPool()
   if (pool) return pool
@@ -678,6 +729,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
   const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/)
   if (startMatch) {
     const payload = startMatch[1]
+    if (payload === 'partner') return startPartnerInquiry(chatId, message.from?.username)
     const refMatch = payload?.match(/^ref_([A-Za-z0-9]+)$/)
     return start(chatId, refMatch ? refMatch[1] : null)
   }

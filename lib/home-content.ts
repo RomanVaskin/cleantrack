@@ -5,6 +5,8 @@
 // static copy for display, not a second source of truth: nothing here is read by the tracker.
 
 export const TELEGRAM_CONTACT_URL = 'https://t.me/CleanTrackRuBot'
+// Fixed partner-application link (/start partner): never referral-wired, unlike the order CTAs.
+export const TELEGRAM_PARTNER_START_URL = `${TELEGRAM_CONTACT_URL}?start=partner`
 
 export type HomeChecklistGroup = { title: string; items: string[] }
 

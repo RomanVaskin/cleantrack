@@ -80,7 +80,7 @@ function OptionButton({
   )
 }
 
-export function PriceQuiz() {
+export function PriceQuiz({ telegramUrl = TELEGRAM_CONTACT_URL }: { telegramUrl?: string }) {
   const [state, setState] = useState<QuizState>(INITIAL_STATE)
   const price = useMemo(() => calculateQuizPrice(state), [state])
   const isFinal = state.step >= STEP_COUNT
@@ -265,7 +265,7 @@ export function PriceQuiz() {
             </label>
           </div>
 
-          <a href={TELEGRAM_CONTACT_URL} target="_blank" rel="noreferrer" className="mt-5 block">
+          <a href={telegramUrl} target="_blank" rel="noreferrer" className="mt-5 block">
             <Button size="lg" className="h-12 w-full rounded-xl text-base">
               Заказать уборку
             </Button>
