@@ -43,6 +43,10 @@ const pool = {
     if (sql.includes('FROM referral_partners ORDER BY created_at DESC')) {
       return { rows: partners.map(pick) }
     }
+    if (sql.includes('access_token') && sql.includes('FROM referral_partners WHERE id = $1')) {
+      const row = partners.find((p) => p.id === params[0])
+      return { rows: row ? [{ ...pick(row), access_token: row.access_token }] : [] }
+    }
     if (sql.includes('FROM referral_partners WHERE id = $1')) {
       const row = partners.find((p) => p.id === params[0])
       return { rows: row ? [pick(row)] : [] }
@@ -156,7 +160,22 @@ async function main() {
   assert.equal(listedA.ordersCount, 4)
   assert.equal(listedA.accruedCommission, 400)
 
-  console.log('PASS: referral commission math, code/token generation, partner isolation and PII-free output')
+  // Admin can re-open a partner and get the access token back (needed to rebuild the partner
+  // URL), but only through the dedicated admin-only lookup — the public shapes above never
+  // carry it, and this lookup has its own UUID-format/not-found guards like the others.
+  const adminDetail = await referralPartners.getReferralPartnerAdminDetailById(partnerA.id)
+  assert.equal(adminDetail.accessToken, partnerA.accessToken)
+  assert.equal(adminDetail.code, partnerA.code)
+  assert.equal(adminDetail.ordersCount, 4)
+  assert.equal(await referralPartners.getReferralPartnerAdminDetailById('not-a-uuid'), null)
+  assert.equal(await referralPartners.getReferralPartnerAdminDetailById('aaaaaaaa-0000-4000-8000-000000009999'), null)
+
+  // The public-facing stats lookup must still never carry the access token, even for the
+  // same partner the admin-only lookup above does expose it for.
+  const publicStats = await referralPartners.getReferralPartnerStatsById(partnerA.id)
+  assert.ok(!('accessToken' in publicStats), 'public stats-by-id must never echo the access token')
+
+  console.log('PASS: referral commission math, code/token generation, partner isolation, admin-only access-token lookup, and PII-free output')
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1 })

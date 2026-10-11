@@ -7,9 +7,9 @@ import {
   createReferralPartner,
   getActiveReferralPartnerByCode,
   getActiveReferralPartnerId,
-  getReferralPartnerStatsById,
+  getReferralPartnerAdminDetailById,
   listReferralPartnersWithStats,
-  type ReferralPartnerDetail,
+  type ReferralPartnerAdminDetail,
 } from '@/lib/data/referral-partners'
 import { TELEGRAM_CONTACT_URL } from '@/lib/home-content'
 import {
@@ -403,7 +403,7 @@ function referralPartnerListText(partners: Awaited<ReturnType<typeof listReferra
     .join('\n')
 }
 
-function referralPartnerDetailText(partner: ReferralPartnerDetail): string {
+function referralPartnerDetailText(partner: ReferralPartnerAdminDetail): string {
   const lines = [
     `Партнёр: ${partner.name}${partner.active ? '' : ' (отключён)'}`,
     `Код: ${partner.code}`,
@@ -413,6 +413,15 @@ function referralPartnerDetailText(partner: ReferralPartnerDetail): string {
     `Сумма всех заказов: ${formatPrice(partner.totalAmount)} ₽`,
     `Сумма выполненных: ${formatPrice(partner.completedAmount)} ₽`,
     `Комиссия с выполненных: ${formatPrice(partner.accruedCommission)} ₽`,
+    '',
+    'Для клиентов через Telegram:',
+    `${TELEGRAM_CONTACT_URL}?start=ref_${partner.code}`,
+    '',
+    'Для клиентов через сайт:',
+    cleanTrackUrl(`/r/${partner.code}`),
+    '',
+    'Статистика партнёра:',
+    cleanTrackUrl(`/partner/${partner.accessToken}`),
   ]
   if (partner.orders.length > 0) {
     lines.push('', 'Последние заказы:')
@@ -557,7 +566,7 @@ async function handleReferralAdminCallback(
     await sendMessage(chatId, 'Партнёр не найден.')
     return
   }
-  const partner = await getReferralPartnerStatsById(arg)
+  const partner = await getReferralPartnerAdminDetailById(arg)
   if (!partner) {
     await sendMessage(chatId, 'Партнёр не найден.')
     return

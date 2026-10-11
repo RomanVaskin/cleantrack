@@ -69,9 +69,10 @@ const referralPartnersMock = {
       ordersCount: 2, totalAmount: 3000, completedAmount: 1000, accruedCommission: 100,
     },
   ],
-  getReferralPartnerStatsById: async (id) => (id === PARTNER_VALID_ID
+  getReferralPartnerAdminDetailById: async (id) => (id === PARTNER_VALID_ID
     ? {
         id: PARTNER_VALID_ID, name: 'Иван', code: 'VALID1', active: true, commissionPercent: 10,
+        accessToken: `token-valid-${'a'.repeat(19)}`,
         ordersCount: 1, totalAmount: 1000, completedAmount: 1000, accruedCommission: 100,
         orders: [{ id: 'o1', number: 'CT-000001', createdAt: new Date().toISOString(), totalPrice: 1000, statusLabel: 'Выполнен', completed: true, commission: 100 }],
       }
@@ -206,11 +207,18 @@ async function main() {
   await callback(adminChat, 'refadmin:list')
   assert.match(sent.at(-1).text, /Иван/)
 
+  // Opening an existing partner re-shows all three client/partner links, not just stats —
+  // this is the usability fix: previously only partner creation ever showed them.
   await callback(adminChat, `refadmin:open:${PARTNER_VALID_ID}`)
-  assert.match(sent.at(-1).text, /Партнёр: Иван/)
-  assert.match(sent.at(-1).text, /Комиссия с выполненных: 100/)
+  const openText = sent.at(-1).text
+  assert.match(openText, /Партнёр: Иван/)
+  assert.match(openText, /Комиссия с выполненных: 100/)
+  assert.match(openText, /start=ref_VALID1/)
+  assert.match(openText, /\/r\/VALID1/)
+  assert.match(openText, /\/partner\/token-valid-/)
 
-  // #10 a non-admin chat cannot reach any referral admin action
+  // #10 a non-admin chat cannot reach any referral admin action, including re-opening a
+  // partner to read its access token / partner URL.
   const strangerChat = 12345
   const sentBefore = sent.length
   await message(strangerChat, '/referrals')
@@ -221,6 +229,10 @@ async function main() {
   assert.equal(answeredCallbacks.at(-1).text, 'Недоступно.')
 
   await callback(strangerChat, 'refadmin:new')
+  assert.equal(sent.length, sentBefore)
+  assert.equal(answeredCallbacks.at(-1).text, 'Недоступно.')
+
+  await callback(strangerChat, `refadmin:open:${PARTNER_VALID_ID}`)
   assert.equal(sent.length, sentBefore)
   assert.equal(answeredCallbacks.at(-1).text, 'Недоступно.')
 

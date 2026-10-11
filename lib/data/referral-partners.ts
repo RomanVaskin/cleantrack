@@ -245,6 +245,33 @@ export async function getReferralPartnerStatsById(id: string): Promise<ReferralP
   return { ...aggregateStats(partner, orders), orders: orders.map((row) => toOrderSummary(row, partner.commission_percent)) }
 }
 
+export interface ReferralPartnerAdminDetail extends ReferralPartnerDetail {
+  accessToken: string
+}
+
+/**
+ * Admin-only lookup: the one place besides partner creation allowed to read back the access
+ * token, so the bot's "open a referral partner" view can re-show the three links. Never used
+ * by the public partner page — callers must gate this behind an admin chat id check.
+ */
+export async function getReferralPartnerAdminDetailById(id: string): Promise<ReferralPartnerAdminDetail | null> {
+  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) return null
+  const pool = getPostgresPool()
+  if (!pool) return null
+  const partnerResult = await pool.query<PartnerRow & { access_token: string }>(
+    'SELECT id, name, code, access_token, active, commission_percent FROM referral_partners WHERE id = $1',
+    [id],
+  )
+  const partner = partnerResult.rows[0]
+  if (!partner) return null
+  const orders = await queryOrders(pool, partner.id)
+  return {
+    ...aggregateStats(partner, orders),
+    orders: orders.map((row) => toOrderSummary(row, partner.commission_percent)),
+    accessToken: partner.access_token,
+  }
+}
+
 /**
  * Public partner page lookup: resolved only by the long random access token, never by the
  * short public code. The returned shape never carries client PII or the access token itself.
