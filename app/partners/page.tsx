@@ -17,6 +17,7 @@ import {
   Share2,
   Users,
 } from 'lucide-react'
+import { CookieSettingsButton } from '@/components/cookie-settings-button'
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { cleanTrackUrl } from '@/lib/cleantrack-url'
@@ -359,6 +360,7 @@ function Footer({ telegramUrl }: { telegramUrl: string }) {
           <Link href="/" className="hover:text-foreground">
             На главную
           </Link>
+          <CookieSettingsButton className="hover:text-foreground" />
         </div>
       </Shell>
     </footer>

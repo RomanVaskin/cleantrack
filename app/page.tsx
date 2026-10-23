@@ -18,6 +18,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { CookieSettingsButton } from '@/components/cookie-settings-button'
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { PriceQuiz } from '@/components/home/price-quiz'
@@ -434,13 +435,14 @@ function Footer({ telegramUrl }: { telegramUrl: string }) {
       <Shell className="flex flex-col items-center gap-4 text-center sm:flex-row sm:justify-between sm:text-left">
         <Logo />
         <p className="text-sm text-muted-foreground">cleantrack.ru</p>
-        <div className="flex gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
           <a href={telegramUrl} target="_blank" rel="noreferrer" className="hover:text-foreground">
             Telegram
           </a>
           <Link href="/partners" className="hover:text-foreground">
             Партнёрам
           </Link>
+          <CookieSettingsButton className="hover:text-foreground" />
           <span>Privacy</span>
           <span>Оферта</span>
         </div>

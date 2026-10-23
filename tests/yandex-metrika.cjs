@@ -54,4 +54,8 @@ assert.equal(metrika.isTelegramOrderUrl('https://t.me/SomeOtherBot'), false)
 assert.equal(metrika.isTelegramOrderUrl('https://cleantrack.ru/partners'), false)
 assert.equal(metrika.isTelegramOrderUrl('#price'), false)
 
-console.log('PASS: Metrika counter id, init options, single tag.js load, public-only paths, telegram_click link matching')
+// Withdrawal wipes Metrika's own cookies/storage keys and nothing else (the consent key stays).
+for (const k of ['_ym_uid', '_ym_d', '_ym_isad', '_ym_visorc', '_ym113761686_lsid']) assert.equal(metrika.isMetrikaStorageKey(k), true, k)
+for (const k of [metrika.ANALYTICS_CONSENT_KEY, 'referral_code', 'ym']) assert.equal(metrika.isMetrikaStorageKey(k), false, k)
+
+console.log('PASS: Metrika counter id, init options, single tag.js load, public-only paths, telegram_click link matching, withdrawal storage keys')

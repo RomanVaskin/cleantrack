@@ -6,10 +6,12 @@ import Script from 'next/script'
 import { Button } from '@/components/ui/button'
 import {
   ANALYTICS_CONSENT_KEY,
+  OPEN_COOKIE_SETTINGS_EVENT,
   TELEGRAM_ORDER_GOAL,
   YANDEX_METRIKA_ID,
   YANDEX_METRIKA_SNIPPET,
   isAnalyticsPath,
+  isMetrikaStorageKey,
   isTelegramOrderUrl,
   type AnalyticsConsent,
 } from '@/lib/yandex-metrika'
@@ -19,6 +21,10 @@ import {
 // app/layout.tsx, so it survives client-side navigation: the counter is initialised once per
 // page load, and each later route change is sent as a single `hit`. Private sections (see
 // isAnalyticsPath) never load it, never show the banner and never send hits.
+//
+// The footer's «Настройки cookie» (components/cookie-settings-button.tsx) reopens the banner.
+// tag.js can't be stopped once loaded, so withdrawing consent deletes Metrika's cookies and
+// storage and reloads the page — the reload renders without the counter.
 
 type Ym = (id: number, method: string, ...args: unknown[]) => void
 
@@ -44,18 +50,56 @@ function saveConsent(value: AnalyticsConsent) {
   }
 }
 
+/** Deletes the _ym* cookies (on every domain level tag.js may use) and _ym* storage keys. */
+function clearMetrikaData() {
+  const labels = window.location.hostname.split('.')
+  const domains = ['', ...labels.slice(0, -1).map((_, i) => `; domain=.${labels.slice(i).join('.')}`)]
+  for (const pair of document.cookie.split(';')) {
+    const name = pair.split('=')[0].trim()
+    if (!isMetrikaStorageKey(name)) continue
+    for (const domain of domains) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${domain}`
+  }
+  for (const storage of [window.localStorage, window.sessionStorage]) {
+    try {
+      Object.keys(storage).filter(isMetrikaStorageKey).forEach((key) => storage.removeItem(key))
+    } catch {
+      // Storage blocked: nothing of Metrika's can be in it either.
+    }
+  }
+}
+
+/** Stops collection on a page where tag.js already runs: wipe its data, reload without it. */
+function withdrawLoadedCounter() {
+  clearMetrikaData()
+  window.location.reload()
+}
+
 export function YandexMetrika() {
   const pathname = usePathname()
   const isPublic = isAnalyticsPath(pathname)
   // undefined until read on the client, so the server render and hydration never show the banner.
   const [consent, setConsent] = useState<AnalyticsConsent | null | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // URL of the last page view Metrika has counted: init counts the page it starts on.
   const lastTrackedUrl = useRef<string | null>(null)
 
   useEffect(() => {
     setConsent(readConsent())
+    const openSettings = () => setSettingsOpen(true)
+    window.addEventListener(OPEN_COOKIE_SETTINGS_EVENT, openSettings)
+    return () => window.removeEventListener(OPEN_COOKIE_SETTINGS_EVENT, openSettings)
   }, [])
+
+  // Consent withdrawn in another tab: this tab stops collecting too.
+  useEffect(() => {
+    if (!loaded) return
+    function onStorage(event: StorageEvent) {
+      if (event.key === ANALYTICS_CONSENT_KEY && event.newValue !== 'granted') withdrawLoadedCounter()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [loaded])
 
   useEffect(() => {
     if (consent === 'granted' && isPublic && !loaded) {
@@ -95,7 +139,12 @@ export function YandexMetrika() {
 
   function choose(value: AnalyticsConsent) {
     saveConsent(value)
+    if (value === 'denied' && loaded) {
+      withdrawLoadedCounter()
+      return
+    }
     setConsent(value)
+    setSettingsOpen(false)
   }
 
   return (
@@ -105,7 +154,7 @@ export function YandexMetrika() {
           {YANDEX_METRIKA_SNIPPET}
         </Script>
       )}
-      {consent === null && isPublic && (
+      {consent !== undefined && (consent === null || settingsOpen) && isPublic && (
         <div
           role="region"
           aria-label="Согласие на аналитику"
@@ -115,6 +164,11 @@ export function YandexMetrika() {
             <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
               Мы используем cookie и Яндекс Метрику, чтобы анализировать посещаемость сайта.
               Метрика включится только с вашего согласия.
+              {consent !== null && (
+                <span className="mt-1 block font-medium text-foreground">
+                  {consent === 'granted' ? 'Сейчас аналитика включена.' : 'Сейчас аналитика отключена.'}
+                </span>
+              )}
             </p>
             <div className="flex shrink-0 gap-2">
               <Button size="sm" className="flex-1 rounded-full px-4 sm:flex-none" onClick={() => choose('granted')}>

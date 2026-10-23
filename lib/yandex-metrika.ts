@@ -13,6 +13,14 @@ export const ANALYTICS_CONSENT_KEY = 'cleantrack_analytics_consent'
 
 export type AnalyticsConsent = 'granted' | 'denied'
 
+/** Window event the footer's «Настройки cookie» button fires to reopen the consent banner. */
+export const OPEN_COOKIE_SETTINGS_EVENT = 'cleantrack:open-cookie-settings'
+
+/** Cookie and storage keys tag.js writes (_ym_uid, _ym_d, _ym_isad, _ym_visorc, …). */
+export function isMetrikaStorageKey(name: string): boolean {
+  return name.startsWith('_ym')
+}
+
 /**
  * The official tag.js loader followed by `init`. The loader's own loop skips a second copy of
  * tag.js, and the component renders this once per page load, so the counter is initialised once.
