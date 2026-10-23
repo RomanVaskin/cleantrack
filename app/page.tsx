@@ -28,11 +28,14 @@ import {
   DIFFERENCE_CLEANTRACK,
   DIFFERENCE_PLAIN,
   HOME_CHECKLIST_GROUPS,
+  HOME_FAQ,
   HOW_IT_WORKS_STEPS,
+  SERVICE_AREA,
   TELEGRAM_PARTNER_START_URL,
   TRUST_POINTS,
 } from '@/lib/home-content'
 import { getReferralCodeFromCookies, resolveTelegramOrderUrl } from '@/lib/referral-attribution'
+import { buildHomeStructuredData, serializeStructuredData } from '@/lib/structured-data'
 import { cn } from '@/lib/utils'
 
 // Commercial landing page for cleantrack.ru. Everything here is new, homepage-only content —
@@ -77,6 +80,10 @@ export default async function HomePage() {
 
   return (
     <main className="flex min-h-dvh w-full flex-col overflow-x-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: serializeStructuredData(buildHomeStructuredData(cleanTrackBaseUrl())) }}
+      />
       <Header telegramUrl={telegramUrl} />
       <Hero telegramUrl={telegramUrl} />
       <HowItWorks />
@@ -85,6 +92,8 @@ export default async function HomePage() {
       <ChecklistPreview />
       <PriceSection telegramUrl={telegramUrl} />
       <Trust />
+      <ServiceArea />
+      <Faq />
       <ReferralTeaser />
       <FinalCta telegramUrl={telegramUrl} />
       <Footer telegramUrl={telegramUrl} />
@@ -207,7 +216,7 @@ function HowItWorks() {
               <span className="flex size-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                 {i + 1}
               </span>
-              <p className="mt-4 font-medium text-foreground">{step.title}</p>
+              <h3 className="mt-4 font-medium text-foreground">{step.title}</h3>
               <p className="mt-1 text-sm text-muted-foreground">{step.text}</p>
             </div>
           ))}
@@ -294,7 +303,7 @@ function ChecklistPreview() {
         <div className="mx-auto mt-12 grid max-w-5xl gap-5 sm:grid-cols-2">
           {HOME_CHECKLIST_GROUPS.map((group) => (
             <div key={group.title} className="rounded-2xl border border-border bg-card p-5">
-              <p className="font-medium text-foreground">{group.title}</p>
+              <h3 className="font-medium text-foreground">{group.title}</h3>
               <ul className="mt-3 space-y-1.5">
                 {group.items.map((item) => (
                   <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -344,6 +353,43 @@ function Trust() {
               </div>
             )
           })}
+        </div>
+      </Shell>
+    </section>
+  )
+}
+
+// Local SEO: the service area and the FAQ, in the same card styles as the rest of the page
+// (the FAQ mirrors /partners). Copy lives in lib/home-content.ts; HOME_FAQ also feeds the
+// FAQPage JSON-LD, so both always say the same thing.
+function ServiceArea() {
+  return (
+    <section id="service-area" className="py-16 sm:py-20">
+      <Shell className="max-w-3xl">
+        <div className="rounded-3xl border border-border bg-card p-6 sm:p-10">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+            <MapPin className="size-4" />
+          </span>
+          <SectionHeading title={SERVICE_AREA.title} className="mt-5" />
+          <p className="mt-3 text-pretty leading-relaxed text-muted-foreground">{SERVICE_AREA.text}</p>
+        </div>
+      </Shell>
+    </section>
+  )
+}
+
+function Faq() {
+  return (
+    <section id="faq" className="scroll-mt-20 py-16 sm:py-20">
+      <Shell className="max-w-3xl">
+        <SectionHeading title="Частые вопросы" />
+        <div className="mt-8 space-y-3">
+          {HOME_FAQ.map(({ question, answer }) => (
+            <div key={question} className="rounded-2xl border border-border bg-card p-5">
+              <h3 className="font-medium text-foreground">{question}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{answer}</p>
+            </div>
+          ))}
         </div>
       </Shell>
     </section>

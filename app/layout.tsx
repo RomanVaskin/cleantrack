@@ -5,9 +5,9 @@ import { cleanTrackBaseUrl } from '@/lib/cleantrack-url'
 import { socialMetadata } from '@/lib/social-metadata'
 import './globals.css'
 
-const SITE_TITLE = 'Уборка квартир и домов в Москве и Московской области — CleanTrack'
+const SITE_TITLE = 'Уборка квартир в Москве и МО с контролем качества | CleanTrack'
 const SITE_DESCRIPTION =
-  'Уборка квартир и домов в Москве и Московской области. Клинер работает по чек-листу, а вы видите статус, выполненные работы и фото в персональном трекере.'
+  'Закажите уборку квартиры в Москве и Московской области. Чек-лист работ, контроль качества и фотоотчёт по желанию. Рассчитайте стоимость онлайн.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(cleanTrackBaseUrl()),
