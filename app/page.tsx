@@ -146,7 +146,7 @@ function Header({ telegramUrl }: { telegramUrl: string }) {
 function Hero({ telegramUrl }: { telegramUrl: string }) {
   return (
     <section className="pt-10 sm:pt-16">
-      <Shell className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
+      <Shell className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1.1fr_1fr] lg:gap-16">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1.5 text-sm text-foreground">
             <span className="size-1.5 rounded-full bg-primary" /> Контроль результата в реальном времени
@@ -248,7 +248,7 @@ function Difference() {
 function TrackerDemo() {
   return (
     <section id="tracker" className="scroll-mt-20 py-20 sm:py-28">
-      <Shell className="grid items-center gap-10 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
+      <Shell className="grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
         <TrackerMockup className="order-2 lg:order-1" />
         <div className="order-1 lg:order-2">
           <SectionHeading title="Вся уборка — в одной ссылке" />

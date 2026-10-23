@@ -19,6 +19,8 @@ import {
 } from 'lucide-react'
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+import { cleanTrackUrl } from '@/lib/cleantrack-url'
+import { socialMetadata } from '@/lib/social-metadata'
 import { TELEGRAM_PARTNER_START_URL, formatRub } from '@/lib/home-content'
 import { getReferralCodeFromCookies, resolveTelegramOrderUrl } from '@/lib/referral-attribution'
 import { cn } from '@/lib/utils'
@@ -29,11 +31,15 @@ import { cn } from '@/lib/utils'
 // No new backend, no partner self-service signup: becoming a partner is still a Telegram
 // conversation with the admin, same as before this PR.
 
+const PAGE_TITLE = 'Партнёрская программа CleanTrack — 10% с выполненных заказов'
+const PAGE_DESCRIPTION =
+  'Рекомендуйте CleanTrack клиентам, жителям дома или подписчикам и получайте 10% с каждого выполненного заказа.'
+
 export const metadata: Metadata = {
-  title: 'Партнёрская программа CleanTrack — 10% с выполненных заказов',
-  description:
-    'Рекомендуйте CleanTrack клиентам, жителям дома или подписчикам и получайте 10% с каждого выполненного заказа.',
-  alternates: { canonical: 'https://cleantrack.ru/partners' },
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  alternates: { canonical: cleanTrackUrl('/partners') },
+  ...socialMetadata({ title: PAGE_TITLE, description: PAGE_DESCRIPTION, path: '/partners' }),
 }
 
 const AUDIENCE = [

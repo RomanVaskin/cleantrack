@@ -20,9 +20,9 @@ const CHECKLIST_ITEMS = [
 ]
 
 const PREVIEW_PHOTOS = [
-  { src: '/photos/kitchen.png', alt: 'Кухня после уборки' },
-  { src: '/photos/sink.png', alt: 'Раковина и зеркало' },
-  { src: '/photos/room.png', alt: 'Комната после уборки' },
+  { src: '/photos/kitchen.png', alt: 'Кухня после уборки', optimized: '/photos/kitchen-480' },
+  { src: '/photos/sink.png', alt: 'Раковина и зеркало', optimized: '/photos/sink-480' },
+  { src: '/photos/room.png', alt: 'Комната после уборки', optimized: '/photos/room-480' },
 ]
 
 function FloatingCard({
@@ -132,13 +132,21 @@ export function TrackerMockup({
               </p>
               <div className="grid grid-cols-3 gap-1.5">
                 {PREVIEW_PHOTOS.map((photo) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={photo.src}
-                    src={photo.src}
-                    alt={photo.alt}
-                    className="aspect-square w-full rounded-lg border border-border object-cover"
-                  />
+                  // 480px AVIF/WebP copies for these ~100px thumbnails; the 1024px PNG stays as the
+                  // fallback (and is still what the demo tracker and the DB seed reference).
+                  <picture key={photo.src} className="block">
+                    <source srcSet={`${photo.optimized}.avif`} type="image/avif" />
+                    <source srcSet={`${photo.optimized}.webp`} type="image/webp" />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.src}
+                      alt={photo.alt}
+                      width={480}
+                      height={480}
+                      decoding="async"
+                      className="aspect-square w-full rounded-lg border border-border object-cover"
+                    />
+                  </picture>
                 ))}
               </div>
             </div>
