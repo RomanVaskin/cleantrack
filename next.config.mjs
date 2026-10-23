@@ -16,6 +16,14 @@ const PRIVATE_ROUTE_SOURCES = [
   '/r/:path*',
 ]
 
+// www.cleantrack.ru serves the same site as cleantrack.ru (same server, same certificate), which
+// search engines see as a duplicate host. Every www URL gets a 301 to the same path and query on
+// the canonical host. 301, not `permanent: true` (that sends 308). The rule only matches the www
+// Host header, so the canonical host itself is never redirected — no loop. It relies on nginx
+// passing the original Host header through to Next.js.
+const CANONICAL_ORIGIN = 'https://cleantrack.ru'
+const WWW_HOST_PATTERN = 'www\\.cleantrack\\.ru'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -26,6 +34,16 @@ const nextConfig = {
   },
   async headers() {
     return PRIVATE_ROUTE_SOURCES.map((source) => ({ source, headers: PRIVATE_ROUTE_HEADERS }))
+  },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: WWW_HOST_PATTERN }],
+        destination: `${CANONICAL_ORIGIN}/:path*`,
+        statusCode: 301,
+      },
+    ]
   },
 }
 
