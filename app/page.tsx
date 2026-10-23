@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Eye,
   Link2,
+  MapPin,
   MessageCircle,
   PhoneOff,
   Percent,
@@ -160,6 +161,10 @@ function Hero({ telegramUrl }: { telegramUrl: string }) {
           <p className="mt-5 max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
             Закажите уборку за пару минут. Клинер работает по чек-листу, а вы видите статус,
             выполненные работы и фото в персональном трекере.
+          </p>
+          <p className="mt-3 flex max-w-xl items-start gap-2 text-pretty text-base leading-relaxed text-muted-foreground">
+            <MapPin className="mt-1 size-4 shrink-0 text-primary" />
+            Оказываем услуги по уборке квартир и домов в Москве и Московской области.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
