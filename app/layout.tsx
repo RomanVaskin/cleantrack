@@ -4,8 +4,9 @@ import { cleanTrackBaseUrl } from '@/lib/cleantrack-url'
 import { socialMetadata } from '@/lib/social-metadata'
 import './globals.css'
 
-const SITE_TITLE = 'CleanTrack — Уборка под контролем'
-const SITE_DESCRIPTION = 'Контроль уборки через чек-листы: клинер отмечает пункты, клиент видит прогресс в реальном времени.'
+const SITE_TITLE = 'Уборка квартир и домов в Москве и Московской области — CleanTrack'
+const SITE_DESCRIPTION =
+  'Уборка квартир и домов в Москве и Московской области. Клинер работает по чек-листу, а вы видите статус, выполненные работы и фото в персональном трекере.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(cleanTrackBaseUrl()),
