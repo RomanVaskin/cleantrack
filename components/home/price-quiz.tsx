@@ -242,6 +242,7 @@ export function PriceQuiz({ telegramUrl = TELEGRAM_CONTACT_URL }: { telegramUrl?
           <p className="mt-1 text-4xl font-semibold tracking-tight text-foreground">{formatRub(price)}</p>
           <p className="mt-1 text-sm text-muted-foreground">Точную стоимость подтвердит клинер перед началом уборки.</p>
 
+          {/* ym-disable-keys: Yandex Metrika's Webvisor never records what is typed into name/phone. */}
           <div className="mt-5 flex flex-col gap-3">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">Имя</span>
@@ -250,7 +251,7 @@ export function PriceQuiz({ telegramUrl = TELEGRAM_CONTACT_URL }: { telegramUrl?
                 value={state.name}
                 onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
                 placeholder="Как вас зовут"
-                className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-primary"
+                className="ym-disable-keys w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-primary"
               />
             </label>
             <label className="block">
@@ -260,7 +261,7 @@ export function PriceQuiz({ telegramUrl = TELEGRAM_CONTACT_URL }: { telegramUrl?
                 value={state.phone}
                 onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))}
                 placeholder="+7 ..."
-                className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-primary"
+                className="ym-disable-keys w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:border-primary"
               />
             </label>
           </div>

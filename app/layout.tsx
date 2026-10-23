@@ -1,5 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import { YandexMetrika } from '@/components/yandex-metrika'
 import { cleanTrackBaseUrl } from '@/lib/cleantrack-url'
 import { socialMetadata } from '@/lib/social-metadata'
 import './globals.css'
@@ -31,6 +32,7 @@ export default function RootLayout({
       <body className="antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
+        <YandexMetrika />
       </body>
     </html>
   )
