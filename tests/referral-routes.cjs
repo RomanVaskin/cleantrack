@@ -76,6 +76,14 @@ async function main() {
   assert.equal(badResponse.url, 'https://cleantrack.ru/')
   assert.equal(badResponse._cookieCalls.length, 0)
 
+  // The redirect target is the public base URL even when the proxied request arrives with the
+  // internal upstream address — never http://localhost:3000/.
+  const proxiedResponse = await route.GET(
+    { url: 'http://localhost:3000/r/VALID1' },
+    { params: Promise.resolve({ code: 'VALID1' }) },
+  )
+  assert.equal(proxiedResponse.url, 'https://cleantrack.ru/')
+
   // #12 an invalid/unknown partner access token renders 404
   partnerByToken = null
   await assert.rejects(
