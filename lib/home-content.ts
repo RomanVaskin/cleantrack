@@ -84,6 +84,66 @@ export const TRUST_POINTS = [
   'Заказ без звонков — через сайт или Telegram',
 ]
 
+// Local-SEO copy for the homepage. Every statement here is backed by the live product: the
+// service area is the owner's own wording; ordering, the questions the Telegram bot asks, the
+// personal link sent after confirmation, client rules, "принять работу" and the price rules come
+// from lib/server/telegram-order-bot.ts, the tracker views and the price quiz. No addresses,
+// districts, deadlines, guarantees or prices. HOME_FAQ also feeds the FAQPage JSON-LD
+// (lib/structured-data.ts), so the markup always matches the visible text word for word.
+export const SERVICE_AREA = {
+  title: 'Уборка квартир в Москве и Московской области',
+  text:
+    'CleanTrack оказывает услуги по уборке квартир и домов в Москве и Московской области. '
+    + 'Стоимость можно рассчитать в калькуляторе на сайте, а заказ оформить в Telegram — без звонков. '
+    + 'Адрес, дату и удобное время вы указываете при оформлении заказа.',
+}
+
+export type HomeFaqItem = { question: string; answer: string }
+
+export const HOME_FAQ: HomeFaqItem[] = [
+  {
+    question: 'В каких районах вы работаете?',
+    answer:
+      'Мы оказываем услуги по уборке квартир и домов в Москве и Московской области. '
+      + 'Адрес уборки вы указываете при оформлении заказа.',
+  },
+  {
+    question: 'Как заказать уборку?',
+    answer:
+      'Рассчитайте стоимость в калькуляторе и нажмите «Заказать уборку» или сразу откройте наш бот в Telegram. '
+      + 'Бот уточнит параметры уборки, дату, время, адрес и контакты.',
+  },
+  {
+    question: 'Как рассчитывается стоимость?',
+    answer:
+      'Стоимость зависит от количества комнат, типа уборки — базовая или генеральная — и дополнительных услуг: '
+      + 'мытья окон, глажки, уборки балкона. Калькулятор показывает предварительную стоимость, '
+      + 'точную стоимость клинер подтвердит перед началом уборки.',
+  },
+  {
+    question: 'Что входит в базовую уборку?',
+    answer:
+      'Пыль с доступных поверхностей, полы, зеркала, кухня, санузел и вынос мусора. '
+      + 'Полный список — в разделе «Что входит в базовую уборку»; он закрепляется в чек-листе вашего заказа.',
+  },
+  {
+    question: 'Как я узнаю, что всё сделано?',
+    answer:
+      'После подтверждения заказа бот пришлёт вам персональную ссылку: в ней видны статус уборки, '
+      + 'отмеченные пункты чек-листа и фото, если вы заказали фотоотчёт. Приложение и регистрация не нужны.',
+  },
+  {
+    question: 'Можно ли указать, что нельзя трогать?',
+    answer:
+      'Да. При заказе можно указать, открывать ли шкафы, можно ли перемещать вещи и что категорически не трогать, '
+      + '— клинер видит эти правила в заказе.',
+  },
+  {
+    question: 'Когда нужно оплачивать уборку?',
+    answer: 'Вы проверяете результат по персональной ссылке и принимаете работу до оплаты.',
+  },
+]
+
 // Example instance of the real ClientRules shape (lib/types.ts) for the tracker showcase —
 // option labels copied verbatim from lib/mock-data.ts (cabinetOptions / moveOptions) so the
 // mockup reads exactly like the real client tracker, not invented UI copy.
